@@ -7,6 +7,7 @@ library(lme4)
 library(ggplot2)
 source('~/Documents/Fisibase/ReadTidyAggs.R')
 ranks <- ranks[ranks$Year != 1988,]
+###testing
 
 ranks$fitness2yo <- NA
 for(row in 1:length(ranks[,1])){
