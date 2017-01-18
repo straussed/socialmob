@@ -9,8 +9,8 @@ library(sna)
 library(network)
 options(stringsAsFactors = FALSE)
 
-source("~/Documents/Research/RCIISI/IdentifyRankChanges.R")
-source("~/Documents/Fisibase/ReadTidyAggs.R")
+source("~/Documents/Research/RCIISI/minicrank/IdentifyRankChanges.R")
+source("~/Documents/Fisibase/fisibasetidy/ReadTidyData.R")
 rank.changes.full <- rank.changes
 ranks <- ranks[ranks$Year != 1988,]
 

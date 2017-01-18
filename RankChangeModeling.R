@@ -1,5 +1,6 @@
 ####
 setwd("~/Documents/Research/RCIISI")
+source("~/Documents/Research/RCIISI/minicrank/RCIISI_DefineFunctions.R")
 options(stringsAsFactors = FALSE)
 library(network)
 library(dplyr)
