@@ -5,6 +5,8 @@
 ##################################################################
 library(lme4)
 library(ggplot2)
+library(MASS)
+library(glmmADMB)
 source("~/Documents/Fisibase/fisibasetidy/ReadTidyData.R")
 ranks <- ranks[ranks$Year != 1988,]
 ###testing
@@ -136,17 +138,42 @@ ggplot(data = filter(ranks, obsTime != 0), aes(y = coalPart, x = Move, col = Ran
 
 ################################Modeling####################################
 ####coalition partners
+ranks$Year <- as.factor(ranks$Year)
+ranks$Clan <- as.factor(ranks$Clan)
 cpm0 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank)
 cpm1 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank, offset = log(obsTime))
 cpm2 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank + Move, offset = log(obsTime))
 cpm3 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank + Move + (1|Year), offset = log(obsTime))
 cpm4 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank + Move + (1|Year) + (1|Clan), offset = log(obsTime))
 cpm5 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank + Move + Move*Rank + (1|Year) + (1|Clan), offset = log(obsTime))
-AIC(cpm0, cpm1, cpm2, cpm3, cpm4, cpm5)
 
-######model upmovers and non-movers separately
-glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coals ~ Rank + Move, offset = log(obsTime))
+cpmnb0 <- glm.nb(data = filter(ranks, obsTime != 0), formula = coalPart ~ Rank)
+cpmnb1 <- glm.nb(data = filter(ranks, obsTime != 0), formula = coalPart ~ Rank + offset(log(obsTime)))
+cpmnb2 <- glm.nb(data = filter(ranks, obsTime != 0), formula = coalPart ~ Rank + Move + offset(log(obsTime)))
+cpmnb3 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula = coalPart ~ Rank + (1|Clan/Year) + offset(log(obsTime)))
+cpmnb4 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula = coalPart ~ Rank + Move + (1|Clan) + offset(log(obsTime)))
+cpmnb5 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula = coalPart ~ Rank + Move + (1|Clan/Year) + offset(log(obsTime)))
+cpmnb6 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula = coalPart ~ Rank * Move + (1|Clan/Year) + offset(log(obsTime)))
 
-cpm5
+AIC(cpm0, cpm1, cpm2, cpm3, cpm4, cpm5, cpmnb0, cpmnb1,cpmnb2,cpmnb3, cpmnb4, cpmnb5, cpmnb6)
+
+####coalition rate
+cm0 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coals ~ Rank)
+cm1 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coals ~ Rank, offset = log(obsTime))
+cm2 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coals ~ Rank + Move, offset = log(obsTime))
+cm3 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coals ~ Rank + Move + (1|Year), offset = log(obsTime))
+cm4 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coals ~ Rank + Move + (1|Year) + (1|Clan), offset = log(obsTime))
+cm5 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coals ~ Rank + Move + Move*Rank + (1|Year) + (1|Clan), offset = log(obsTime))
+
+cmnb0 <- glm.nb(data = filter(ranks, obsTime != 0), formula = coals ~ Rank)
+cmnb1 <- glm.nb(data = filter(ranks, obsTime != 0), formula = coals ~ Rank + offset(log(obsTime)))
+cmnb2 <- glm.nb(data = filter(ranks, obsTime != 0), formula = coals ~ Rank + Move + offset(log(obsTime)))
+cmnb3 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula = coals ~ Rank + (1|Clan/Year) + offset(log(obsTime)))
+cmnb4 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula = coals ~ Rank + Move + (1|Clan) + offset(log(obsTime)))
+cmnb5 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula = coals ~ Rank + Move + (1|Clan/Year) + offset(log(obsTime)))
+cmnb6 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula = coals ~ Rank * Move + (1|Clan/Year) + offset(log(obsTime)))
+
+AIC(cm0, cm1, cm2, cm3, cm4, cm5, cmnb0, cmnb1,cmnb2,cmnb3, cmnb4, cmnb5, cmnb6)
+
 
 ############################################################################
