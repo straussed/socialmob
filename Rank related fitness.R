@@ -5,7 +5,7 @@
 ##################################################################
 library(lme4)
 library(ggplot2)
-source('~/Documents/Fisibase/ReadTidyAggs.R')
+source("~/Documents/Fisibase/fisibasetidy/ReadTidyData.R")
 ranks <- ranks[ranks$Year != 1988,]
 ###testing
 
@@ -51,6 +51,23 @@ plot(fitRanksBin$stan.rank.model, fitRanksBin$fitness2yo, ylim = c(0,1), lwd = 3
 lines(ranks.ordered$stan.rank.model, exp(fixef(p4)[1] + fixef(p4)[2]*ranks.ordered$stan.rank.model + fixef(p4)[3]*ranks.ordered$is.alpha), lwd = 3)
 
 
+##################################Testosterone#########################
+ttt <- read.csv("~/Documents/Fisibase/testosterone.csv")
+ttt$hyenaID <- tolower(ttt$hyenaID)
+ttt$poop_date <- as.Date(ttt$poop_date, format = '%d-%b-%y')
+ttt$poop_year <- as.numeric(format(ttt$poop_date, '%Y'))
+ttt$am.pm <- as.factor(ttt$am.pm)
+ttt$ng.g <- as.numeric(ttt$ng.g)
+ttt[ttt$poop_time == '','am.pm'] <- NA
+
+ttt.am <- filter(ttt, am.pm == 'AM')
+ttt.am.mean <- aggregate(ng.g ~ poop_year + hyenaID, data = ttt.am, mean)
+
+ranks$fecalT <- left_join(x = ranks, y = ttt.am.mean, by = c("Year" = "poop_year", "ID" = "hyenaID"))$ng.g
+boxplot(ranks$fecalT ~ ranks$DiffBinary)
+#######################################################################
+
+#######################################################################
 
 confints <- confint.merMod(m3)[3:5,]
 
@@ -74,28 +91,62 @@ for(row in 1:length(ranks[,1])){
   start <- ranks[ranks$IDold == ranks[row,'ID'] & ranks$Year == ranks[row,'Year'], 'stan.rank.model']
   ranks[row,'Diff'] <- fitdif(start, end)
   if(start < end){
-    ranks$Move <- "Up"
-  }else if(start > end){ranks$Move <- "Down"}
+    ranks[row,'Move'] <- "Up"
+  }else if(start > end){ranks[row,'Move'] <- "Down"}
 }
-ranks$WhichHalf <- ifelse(ranks$stan.rank < 1.1, 0, 1)
+ranks$WhichHalf <- ifelse(ranks$stan.rank < 0, 0, 1)
 ranks$DiffBinary  <- ifelse(ranks$Diff > 0, 1, 0)
 ggplot(data = ranks, aes(x = Diff, fill  = as.factor(WhichHalf))) +
   geom_bar(position = 'dodge', binwidth = .1)
 
-##################################Testosterone#########################
-ttt <- read.csv("~/Documents/Fisibase/testosterone.csv")
-ttt$hyenaID <- tolower(ttt$hyenaID)
-ttt$poop_date <- as.Date(ttt$poop_date, format = '%d-%b-%y')
-ttt$poop_year <- as.numeric(format(ttt$poop_date, '%Y'))
-ttt$am.pm <- as.factor(ttt$am.pm)
-ttt$ng.g <- as.numeric(ttt$ng.g)
-ttt[ttt$poop_time == '','am.pm'] <- NA
+########################Add coalition info##################################
+for(row in 1:length(ranks[,1])){
+  id <- ranks[row,'ID']
+  year <- ranks[row,'Year']
+  clan <- ranks[row,'Clan']
+  ranks[row,'coals'] <- length(filter(aggsFull,
+                         Agg == id,
+                         Clan == clan,
+                         Year == year,
+                         Seq > 0)[,1])
+  ranks[row,'obsTime'] <- sum(sessions[grep(id, filter(sessions, format(Date, '%Y') == year)$Hyenas),'Time'], na.rm = T)
+  ranks[row,'coalPart'] <- length(unique(unlist(strsplit(filter(aggsFull,
+                                            Agg == id,
+                                            Clan == clan,
+                                            Year == year,
+                                            Seq > 0)[,'Group'], ','))))-2
+  if(ranks[row,'coals'] == 0){ranks[row, 'coalPart'] <- 0}
+  ranks[row, 'coalRate'] <- ranks[row,'coals']/ranks[row,'obsTime']
+  ranks[row,'aggs'] <- length(filter(aggsFull,
+                           Agg == id,
+                           Clan == clan,
+                           Year == year)[,1])
+  ranks[row,'aggRate'] <- ranks[row,'aggs']/ranks[row,'obsTime']
+  
+}
+ranks$Move <- factor(ranks$Move, levels = c('None', 'Up', 'Down'))
+############################################################################
 
-ttt.am <- filter(ttt, am.pm == 'AM')
-ttt.am.mean <- aggregate(ng.g ~ poop_year + hyenaID, data = ttt.am, mean)
+boxplot(ranks$coalRate ~ ranks$Move)
+boxplot(ranks$coalPart ~ ranks$Move)
+plot(data = filter(ranks, Move == 'None'), coalPart ~ Rank)
+ggplot(data = filter(ranks, obsTime != 0), aes(y = coalPart, x = Move, col = Rank)) + 
+  geom_point()
 
-ranks$fecalT <- left_join(x = ranks, y = ttt.am.mean, by = c("Year" = "poop_year", "ID" = "hyenaID"))$ng.g
-boxplot(ranks$fecalT ~ ranks$DiffBinary)
-#######################################################################
 
-#######################################################################
+################################Modeling####################################
+####coalition partners
+cpm0 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank)
+cpm1 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank, offset = log(obsTime))
+cpm2 <- glm(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank + Move, offset = log(obsTime))
+cpm3 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank + Move + (1|Year), offset = log(obsTime))
+cpm4 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank + Move + (1|Year) + (1|Clan), offset = log(obsTime))
+cpm5 <- glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coalPart ~ Rank + Move + Move*Rank + (1|Year) + (1|Clan), offset = log(obsTime))
+AIC(cpm0, cpm1, cpm2, cpm3, cpm4, cpm5)
+
+######model upmovers and non-movers separately
+glmer(data = filter(ranks, obsTime != 0), family = poisson, formula = coals ~ Rank + Move, offset = log(obsTime))
+
+cpm5
+
+############################################################################
