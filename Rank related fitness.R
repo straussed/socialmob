@@ -7,6 +7,9 @@ library(lme4)
 library(ggplot2)
 library(MASS)
 library(glmmADMB)
+library(rethinking)
+source("~/Documents/Fisibase/fisibasetidy/ReadTidyData.R")
+source("~/Documents/Research/RCIISI/minicrank/IdentifyRankChanges.R")
 source("~/Documents/Fisibase/fisibasetidy/ReadTidyData.R")
 ranks <- ranks[ranks$Year != 1988,]
 ###testing
@@ -22,8 +25,169 @@ for(row in 1:length(ranks[,1])){
 ranks$stan.rank.model <- ranks$stan.rank+1
 ranks$is.alpha <- ifelse(ranks$Rank == 1, 1,0)
 
-- 
 
+ranksDecay <- data.frame()
+
+for(year in unique(ranks$Year)){
+  yrranks <- ranks[ranks$Year == year,]
+  for(id in unique(yrranks$ID)){
+    if(id %in% ranks[ranks$Year == (year+1), 'ID']){
+      ranksDecay <- rbind(ranksDecay, cbind(Year = year, ID = id, Rank = round(yrranks[yrranks$ID == id, 'stan.rank'], 4),
+                                            Delta = round(ranks[ranks$Year == (year + 1) & ranks$ID == id, 'stan.rank'] - yrranks[yrranks$ID == id, 'stan.rank'], 4),
+                                            absRank = yrranks[yrranks$ID == id, 'Rank'],
+                                            absDelta = yrranks[yrranks$ID == id, 'Rank'] - ranks[ranks$Year == (year + 1) & ranks$ID == id, 'Rank'],
+                                            Clan = unique(ranks[ranks$ID == id,'Clan'])))
+    }
+  }
+}
+ranksDecay$Rank <- as.numeric(ranksDecay$Rank)
+ranksDecay$Delta <- as.numeric(ranksDecay$Delta)
+ranksDecay$absRank <- as.numeric(ranksDecay$absRank)
+ranksDecay$absDelta <- as.numeric(ranksDecay$absDelta)
+
+###Integrate rank.changes object in order to remove individuals who change ranks
+for(row in 1:length(rank.changes[,1])){
+  ranksDecay <- filter(ranksDecay, Year != (rank.changes[row,'Year']-1) | (ID != rank.changes[row,'Upmover'] & ID !=rank.changes[row,'Downmover']))
+}
+
+hist(ranksDecay$absDelta)
+
+
+# absM <- lm(data = ranksDecay, absDelta ~ I(poly(absRank, 2)))
+# 
+# plot(ranksDecay$absDelta ~ ranksDecay$absRank)
+# rseq <- seq(0,60)
+# rseq.s <- seq(0:60)^2
+# lines(coef(absM)[1] + coef(absM)[2]*rseq + coef(absM)[3]*rseq.s)
+
+#ranksDecay$absRank.s <- ranksDecay$absRank ^ 2
+#polynomial seems inappropriate
+rnkfit <- map(alist(
+            Delta ~ dnorm(u, s),
+            u <- a + b1*Rank,
+            a ~ dnorm(0,10),
+            b1 ~ dnorm(0,10),
+            s ~ dunif(0,20)
+            ), data = ranksDecay)
+plot(precis(rnkfit))
+
+plot(ranksDecay$absDelta ~ jitter(ranksDecay$absRank))
+with(filter(ranksDecay, Clan == 'talek'), plot(Delta ~ jitter(Rank), main = 'Talek'))
+with(filter(ranksDecay, Clan != 'talek'), plot(Delta ~ jitter(Rank), main = 'Not Talek'))
+abline(coef(rnkfit)[1], coef(rnkfit)[2])
+
+alphaDescent <- function(id){
+  if(length(id) == 0 ){
+    return(F)
+  }else if(is.na(id) | id == ''){
+    return(F)
+  }else if(id == 'kb'){
+    return(T)
+  }else(alphaDescent(tblHyenas[tblHyenas$ID == id,'Mom']))
+}
+
+
+ranks$Move <- "None"
+for(row in 1:length(ranks[,1])){
+  if(ranks[row,'ID']==ranks[row,'IDold']){
+    start = end
+    next
+  }
+  end <- ranks[row,]$stan.rank.model
+  start <- ranks[ranks$IDold == ranks[row,'ID'] & ranks$Year == ranks[row,'Year'], 'stan.rank.model']
+  if(start < end){
+    ranks[row,'Move'] <- "Up"
+  }else if(start > end){ranks[row,'Move'] <- "Down"}
+}
+
+
+#######plot lines for each individual
+#ranks$ID <- ranks$NewOrder
+par(fig = c(0,1,0,1))
+plot(data = ranks, Rank ~ Year, type = 'n', ylim = c(50,0), main = 'Talek')
+for(id in unique(ranks[ranks$Clan == 'talek',]$ID)){
+  clr <- ifelse(alphaDescent(id), 'blue', 'black')
+  #if(id == 'nav'){clr <- 'red'}
+  #clr <- 'black'
+  if('Up' %in% ranks[ranks$ID == id,'Move'] | 'Down' %in% ranks[ranks$ID == id, 'Move']){
+    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))
+  }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))}
+}
+
+par(fig = c(0.07,(.07+(6/25)+.02),0.10,.40), new = T)
+plot(data = ranks[ranks$Clan == 'south',], Rank ~ Year, type = 'n', ylim = c(20,0), main = 'South')
+for(id in unique(ranks[ranks$Clan == 'south',]$ID)){
+  if('Up' %in% ranks[ranks$ID == id,'Move'] | 'Down' %in% ranks[ranks$ID == id, 'Move']){
+    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'black'))
+  }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+}
+
+par(fig = c(0,1,0,1), new = T)
+par(fig = c((.07+(6/25)+.02),(.33+.26), 0.10,.40), new = T)
+plot(data = ranks[ranks$Clan == 'north',], Rank ~ Year, type = 'n', ylim = c(20,0), main = 'North')
+for(id in unique(ranks[ranks$Clan == 'north',]$ID)){
+  if('Up' %in% ranks[ranks$ID == id,'Move'] | 'Down' %in% ranks[ranks$ID == id, 'Move']){
+    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'black'))
+  }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+}
+
+par(fig = c(0,1,0,1), new = T)
+par(fig = c(0.59,.59+.26, 0.10,.40), new = T)
+plot(data = ranks[ranks$Clan == 'hz',], Rank ~ Year, type = 'n', ylim = c(20,0), main = 'Happy Zebra', axes = F, frame.plot = T)
+axis(1, at = seq(2009, 2012))
+axis(2, at = c(0, 5, 10, 15, 20))
+for(id in unique(ranks[ranks$Clan == 'hz',]$ID)){
+  if('Up' %in% ranks[ranks$ID == id,'Move'] | 'Down' %in% ranks[ranks$ID == id, 'Move']){
+    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'black'))
+  }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+}
+
+
+##################Compare fitness######################
+latIds <- unique(filter(ranks, Year >= 2008, Year <= 2012, stan.rank < 0, Clan == 'talek')$ID)
+earlyPer <- filter(ranks, ID %in% latIds & Clan == 'talek' & Year < 2008 & Year >= 2003)
+latePer <- filter(ranks, ID %in% earlyPer$ID & Clan == 'talek' & Year >= 2008 & Year <= 2012)
+dev.off()
+par(mfrow = c(1,2))
+hist(earlyPer$fitness2yo)
+hist(latePer$fitness2yo)
+
+#######Plot ranks by age#######
+#ranks$Age <- NA
+par(fig = c(0,1,0,1))
+plot(data = ranks, Rank ~ Age, type = 'n', main = 'Talek', ylim = c(50,0))
+for(id in unique(ranks[ranks$Clan == 'talek',]$ID)){
+  irank <- ranks[ranks$ID == id & ranks$Year == min(ranks[ranks$ID == id,'Year']),'Rank']
+  ranks[ranks$ID == id,'dRank'] <- irank - ranks[ranks$ID == id, 'Rank']
+  if(!is.na(tblHyenas[tblHyenas$ID == id,'Birthdate'])){
+    ranks[ranks$ID == id,'Age'] <- as.numeric(ranks[ranks$ID == id,'Year']) - as.numeric(format(tblHyenas[tblHyenas$ID == id,'Birthdate'], '%Y')) 
+    }
+  clr <- 'black'
+  if(id %in% c(rank.changes$Upmover, rank.changes$Downmover)){
+    with(filter(ranks, ID == id), lines(Rank ~ Age, lwd = 1.5, col = 'black'))
+  }else{with(filter(ranks, ID == id), lines(Rank ~ Age, lwd = 1.5, col = 'black'))}
+}
+
+####delta rank 
+dev.off()
+par(fig = c(0,1,0,1))
+plot(data = ranks, dRank ~ Age, type = 'n', axes = T, ylab= 'Net change in rank since onset of adulthood')
+for(id in unique(ranks[ranks$Clan == 'talek',]$ID)){
+  irank <- ranks[ranks$ID == id & ranks$Year == min(ranks[ranks$ID == id,'Year']),'Rank']
+  ranks[ranks$ID == id,'dRank'] <- irank - ranks[ranks$ID == id, 'Rank']
+  if(!is.na(tblHyenas[tblHyenas$ID == id,'Birthdate'])){
+    ranks[ranks$ID == id,'Age'] <- as.numeric(ranks[ranks$ID == id,'Year']) - as.numeric(format(tblHyenas[tblHyenas$ID == id,'Birthdate'], '%Y')) 
+  }
+  clr <- 'black'
+  if(id %in% c(rank.changes$Upmover, rank.changes$Downmover)){
+    with(filter(ranks, ID == id), lines(dRank ~ Age, lwd = 1.5, col = 'black'))
+  }else{with(filter(ranks, ID == id), lines(dRank ~ Age, lwd = 1.5, col = 'black'))}
+}
+abline(h = 0, col = 'red', lty = 2)
+mRankDecay <- glm(data = ranks, exp(dRank) ~ Age)
+plot(mRankDecay)
+
+##################################################################
 m1 <- lm(data = ranks, fitness2yo ~ Rank)
 m2 <- lm(data = ranks, fitness2yo ~ Rank + I(Rank^2))
 m3 <- lmer(data = ranks, fitness2yo ~ stan.rank.model + I(stan.rank.model^2) + is.alpha + (1|ID))
@@ -51,6 +215,42 @@ lines(ranks.ordered$stan.rank.model, exp(fixef(p3)[1] + fixef(p3)[2]*ranks.order
 #####Model without quadratic
 plot(fitRanksBin$stan.rank.model, fitRanksBin$fitness2yo, ylim = c(0,1), lwd = 3)
 lines(ranks.ordered$stan.rank.model, exp(fixef(p4)[1] + fixef(p4)[2]*ranks.ordered$stan.rank.model + fixef(p4)[3]*ranks.ordered$is.alpha), lwd = 3)
+
+
+
+#####Model with rethinking
+mreth <- glimmer(fitness2yo ~ (1|ID) + stan.rank.model + is.alpha, ranks[!is.na.data.frame(ranks$fitness2yo),], family = poisson)
+mrs <- map2stan(mreth$f, mreth$d)
+srm.seq <- seq(from = 0, to = 2, length.out = 1000)
+mu <- link(mrs, data.frame(stan_rank_model = srm.seq, is_alpha = c(rep(0, 900), rep(0,100)), ID = as.factor(sample(ranks$ID, 1000, replace = T))))
+mu.PI <- apply(mu, 2, PI)
+mu.M <- apply(mu, 2, mean)
+plot(fitRanksBin$stan.rank.model, fitRanksBin$fitness2yo, ylim = c(0,1), lwd = 3)
+lines(srm.seq, mu.M, col = col.alpha(rangi2, .4))
+shade(mu.PI, srm.seq)##
+
+
+#####Model with rethinking without alpha
+mreth <- glimmer(fitness2yo ~ (1|ID) + stan.rank.model, ranks[!is.na.data.frame(ranks$fitness2yo),], family = poisson)
+mrs <- map2stan(mreth$f, mreth$d)
+srm.seq <- seq(from = 0, to = 2, length.out = 1000)
+mu <- link(mrs, data.frame(stan_rank_model = srm.seq, rep(0,100)), ID = as.factor(sample(ranks$ID, 1000, replace = T)))
+mu.PI <- apply(mu, 2, PI)
+mu.M <- apply(mu, 2, mean)
+plot(fitRanksBin$stan.rank.model, fitRanksBin$fitness2yo, ylim = c(0,1), lwd = 3)
+lines(srm.seq, mu.M, col = col.alpha(rangi2, .4))
+shade(mu.PI, srm.seq)##
+
+
+
+##############################Observed Fitness########################
+
+
+######################################################################
+
+
+
+
 
 
 ##################################Testosterone#########################
@@ -128,12 +328,30 @@ for(row in 1:length(ranks[,1])){
 }
 ranks$Move <- factor(ranks$Move, levels = c('None', 'Up', 'Down'))
 ############################################################################
-
-boxplot(ranks$coalRate ~ ranks$Move)
-boxplot(ranks$coalPart ~ ranks$Move)
+par(mfrow = c(1,2))
+boxplot(ranks$coalRate ~ ranks$Move, main = 'Rate of coalitions')
+boxplot(ranks$coalPart ~ ranks$Move, main = 'Number of coalition partners')
 plot(data = filter(ranks, Move == 'None'), coalPart ~ Rank)
 ggplot(data = filter(ranks, obsTime != 0), aes(y = coalPart, x = Move, col = Rank)) + 
   geom_point()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ################################Modeling####################################
@@ -175,5 +393,6 @@ cmnb6 <- glmmadmb(data = filter(ranks, obsTime != 0), family = "nbinom", formula
 
 AIC(cm0, cm1, cm2, cm3, cm4, cm5, cmnb0, cmnb1,cmnb2,cmnb3, cmnb4, cmnb5, cmnb6)
 
-
+r <- residuals(cmnb3)
+summary(glm(exp(r) ~ filter(ranks, obsTime != 0)$Move, family = 'Gamma'))
 ############################################################################

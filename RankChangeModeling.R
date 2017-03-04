@@ -34,6 +34,8 @@ checkSes <- function(ses, hyena){
   return(hyena %in% strsplit(ses$hyenas, ','))
 }
 
+
+
 ####Rank changes from IdentifyRankChanges
 rank.changes
 l <- length(rank.changes[,1])
@@ -77,6 +79,5 @@ ggplot(data = rc.indiv, aes(y = as.numeric(rateCoals), x = as.numeric(Rank), col
 hist(log(as.numeric(unique(rc.indiv$rateCoals))))
 
 lm(data = rc.indiv, numCoals ~ factor(Direction))
-
-
+rc.indiv$Direction <- as.factor(rc.indiv$Direction)
 
