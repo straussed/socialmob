@@ -56,13 +56,25 @@ for(clan in unique(ranks$Clan)){
           if(p %in% yearRanks$ID) {obsnet[id,p] <- obsnet[id,p]+1}
         }
       }
-      for(a in yearRanks$ID){
-        for(b in yearRanks$ID){
-          ainet[a,b] <- obsnet[a,b]/(obsnet[a,a] + obsnet[b,b] - obsnet[a,b])
-        }
+    }
+    for(a in yearRanks$ID){
+      for(b in yearRanks$ID){
+        ainet[a,b] <- obsnet[a,b]/(obsnet[a,a] + obsnet[b,b] - obsnet[a,b])
       }
     }
     assign(paste('ainet', clan, year, sep = '_'), ainet)
+    
+    ######Greeting network
+    grtnet <- matrix(nrow = length(yearRanks$ID), ncol = length(yearRanks$ID), dimnames = list(yearRanks$ID, yearRanks$ID), data = 0)
+    grtsTemp <- filter(greetings, format(Date, "%Y") == year, ID1 %in% yearRanks$ID, ID2 %in% yearRanks$ID)
+    if(length(grtsTemp[,1])){
+      for(row in 1:length(grtsTemp)){
+      grtnet[grtsTemp[row,'ID1'], grtsTemp[row,'ID2']] <- grtnet[grtsTemp[row,'ID1'], grtsTemp[row,'ID2']] + 1
+      grtnet[grtsTemp[row,'ID2'], grtsTemp[row,'ID1']] <- grtnet[grtsTemp[row,'ID2'], grtsTemp[row,'ID1']] + 1
+      }
+    }
+    
+    assign(paste('grtnet', clan, year, sep = '_'), network(grtnet, ignore.eval = FALSE, names.eval = 'numGrt'))
   }
 }
 ##################################################################
@@ -71,7 +83,7 @@ for(clan in unique(ranks$Clan)){
 
 #########################Binarize ainets###########################
 for(ainame in ls()[grep('^ainet_.*', ls())]){
-  cutoff <- .1
+  cutoff <- .05
   ainet <- get(ainame)
   diag(ainet) <- 0
   bin <- (ainet >= cutoff)+0
@@ -114,19 +126,23 @@ for(clan in unique(ranks$Clan)){
     ainet <- get(paste('full_ainet', clan, year, sep = '_'))
     coalNet <- get(paste('coalNet', clan, year, sep = '_'))
     aggNet <- get(paste('aggNet', clan, year, sep = '_'))
+    grtNet <- get(paste('grtnet', clan, year, sep = '_'))
     
     ###Strongest allies
     netDat[netDat$Year == year & netDat$Clan == clan, 'top3coals'] <- mapply(1:length(yearRanks[,1]),
                                                                              FUN = function(x) mean(sort(as.sociomatrix(coalNet, attrname = 'numCoals')[,x],decreasing = T)[1:3]))
     netDat[netDat$Year == year & netDat$Clan == clan, 'top3ai'] <- mapply(1:length(yearRanks[,1]),
                                                                              FUN = function(x) mean(sort(as.sociomatrix(ainet, attrname = 'AIw')[,x],decreasing = T)[1:3]))
+    netDat[netDat$Year == year & netDat$Clan == clan, 'top3ranks'] <- mapply(1:length(yearRanks[,1]),
+                                                                          FUN = function(x) mean(filter(yearRanks, ID %in% names(sort(as.sociomatrix(ainet, attrname = 'AIw')[,x],decreasing = T)[1:3]))$Rank))
+    
     
         
     netDat[netDat$Year == year & netDat$Clan == clan, 'aiDeg'] <- degree(as.sociomatrix(ainet, attrname = 'AIw'), gmode = 'graph', rescale = F, ignore.eval = F)
     netDat[netDat$Year == year & netDat$Clan == clan, 'coalDeg'] <- degree(as.sociomatrix(coalNet, attrname = 'numCoals'), gmode = 'graph', rescale = F, ignore.eval = F)
     netDat[netDat$Year == year & netDat$Clan == clan, 'aggIdeg'] <- degree(as.sociomatrix(aggNet), cmode = 'indegree', gmode = 'digraph', rescale = F, ignore.eval = T)
     netDat[netDat$Year == year & netDat$Clan == clan, 'aggOdeg'] <- degree(as.sociomatrix(aggNet), cmode = 'outdegree', gmode = 'digraph', rescale = F, ignore.eval = T)
-    netDat[netDat$Year == year & netDat$Clan == clan, 'aggOdeg'] <- degree(as.sociomatrix(aggNet), cmode = 'outdegree', gmode = 'digraph', rescale = F, ignore.eval = T)
+    netDat[netDat$Year == year & netDat$Clan == clan, 'grtDeg'] <- degree(as.sociomatrix(grtNet), gmode = 'graph', rescale = F, ignore.eval = F)
   }
 }
 ##################################################################
@@ -135,13 +151,15 @@ for(clan in unique(ranks$Clan)){
 
 #####################Compare within individuals###################
 moveIndComp <- filter(netDat, Move != 'None')
-names(moveIndComp) <- c('Rank', 'Year', 'ID', 'IDold', 'Clan', 'stan.rank', 'Direction', 'top3coalsUnstable', 'top3aiUnstable', 'aiDegUnstable', 'coalDegUnstable', 'aggIdegUnstable', 'aggOdegUnstable')
+names(moveIndComp) <- c('Rank', 'Year', 'ID', 'IDold', 'Clan', 'stan.rank', 'Direction', 'top3coalsUnstable', 'top3aiUnstable', 'aiDegUnstable', 'coalDegUnstable', 'aggIdegUnstable', 'aggOdegUnstable', 'grtDegUnstable', 'top3ranksUnstable')
 moveIndComp$aiDegStable <- NA
 moveIndComp$coalDegStable <- NA
 moveIndComp$aggIdegStable <- NA
 moveIndComp$aggOdegStable <- NA
 moveIndComp$top3coalsStable <- NA
 moveIndComp$top3aiStable <- NA
+moveIndComp$grtDegStable <- NA
+moveIndComp$top3ranksStable <- NA
 for(row in 1:length(moveIndComp[,1])){
   id <- moveIndComp[row,'ID']
   nextYear <- moveIndComp[row,'Year']+1
@@ -151,8 +169,11 @@ for(row in 1:length(moveIndComp[,1])){
     moveIndComp[row,'coalDegStable'] <- nextDat$coalDeg
     moveIndComp[row,'aggIdegStable'] <- nextDat$aggIdeg
     moveIndComp[row,'aggOdegStable'] <- nextDat$aggOdeg
+    moveIndComp[row,'grtDegStable'] <- nextDat$grtDeg
     moveIndComp[row,'top3aiStable'] <- nextDat$top3ai
     moveIndComp[row,'top3coalsStable'] <- nextDat$top3coals
+    moveIndComp[row,'grtDegStable'] <- nextDat$grtDeg
+    moveIndComp[row,'top3ranksStable'] <- nextDat$top3ranks
   }
 }
 par(mfrow = c(2,2))
@@ -205,21 +226,83 @@ lowRankMove <- filter(moveIndComp, Rank > 5)
 with(lowRankMove, plot(top3aiStable ~ top3aiUnstable, col = as.factor(Direction), lwd = 3))
 abline(a = 0, b = 1)
 
+moveIndComp$RankBin <- cut(moveIndComp$Rank, c(0,5,10,15,20,25,30,35,40,45,50))
 
 ggplot(data = moveIndComp, aes((y = top3aiUnstable - top3aiStable), x = Rank, col  = Direction)) +
   geom_point() + 
-  geom_smooth(method = lm)
+  geom_smooth(method = lm)+
+  ylab('Difference betwen Rank change year and subsequent year')
 
 ggplot(data = moveIndComp, aes((y = top3coalsUnstable - top3coalsStable), x = Rank, col  = Direction)) +
   geom_point() + 
-  geom_smooth(method = lm)
+  geom_smooth(method = lm)+
+  ylab('Difference betwen Rank change year and subsequent year')
 
 ggplot(data = moveIndComp, aes((y = aiDegUnstable - aiDegStable), x = Rank, col  = Direction)) +
   geom_point() + 
-  geom_smooth(method = lm)
+  geom_smooth(method = lm)+
+  ylab('Difference betwen Rank change year and subsequent year')
 
-ggplot(data = moveIndComp, aes((y = coalDegUnstable - coalDegStable), x = Rank, col  = Direction)) +
+ggplot(data = moveIndComp, aes((y = coalDegUnstable - coalDegStable), x = RankBin, fill = Direction)) +
+  geom_boxplot(notch = F) + 
+  geom_smooth(method = lm)+
+  ylab('Difference betwen Rank change year and subsequent year')
+
+ggplot(data = moveIndComp, aes(y = top3ranksUnstable - top3ranksStable, x = Rank, col = as.factor(Direction))) +
   geom_point() + 
-  geom_smooth(method = lm)
+  #geom_smooth(method = lm)+
+  ylab('Difference betwen Rank change year and subsequent year')
 
-     
+ggplot(data = filter(moveIndComp, Clan == 'talek'), aes((y = grtDegUnstable - grtDegStable), x = Rank, col  = Direction)) +
+  geom_point() + 
+  geom_smooth(method = lm)+
+  ylab('Difference betwen Rank change year and subsequent year')
+
+ggplot(data = moveIndComp)+
+  geom_boxplot(aes(y = coalDegUnstable, x = RankBin, fill = 'red'), alpha = .5) + 
+  geom_boxplot(aes(y = coalDegStable, x = RankBin, fill = 'blue'), alpha = .5) +
+  scale_fill_identity()
+
+ggplot(data = moveIndComp)+
+  geom_boxplot(aes(y = aiDegUnstable, x = RankBin, fill = 'red'), alpha = .5) + 
+  geom_boxplot(aes(y = aiDegStable, x = RankBin, fill = 'blue'), alpha = .5, position = 'dodge') +
+  scale_fill_identity()
+
+ggplot(data = moveIndComp)+
+  geom_boxplot(aes(y = coalDegUnstable, x = RankBin, fill = 'red'), alpha = .5) + 
+  geom_boxplot(aes(y = coalDegStable, x = RankBin, fill = 'blue'), alpha = .5) +
+  scale_fill_identity()
+
+melt(moveIndComp, id.vars = c('Rank', 'Year', 'ID', 'IDold', 'Clan'))
+
+
+####################################Modularity#############################
+library(bipartite)
+library(igraph)
+?computeModules
+plotModuleWeb(computeModules(aggNet_talek_2012[,]))
+
+g <- graph_from_adjacency_matrix(as.sociomatrix(full_ainet_talek_1995, attrname = 'AIw'), mode = 'undirected', weighted = T)
+#g <- graph_from_adjacency_matrix(as.sociomatrix(coalNet_talek_2007, attrname = 'numCoals'), mode = 'undirected', weighted = T)
+
+
+remove.isolates <- function(g){
+  g <- igraph::delete.vertices(g, which(igraph::degree(g) == 0))
+  return(g)
+}
+
+
+gplot <- remove.isolates(g)
+c <- cluster_louvain(gplot)
+layweight <- ifelse(crossing(c, gplot), 2, 1)
+layout <- layout_with_kk(gplot, weights=layweight)
+plot.igraph(gplot, edge.width = E(gplot)$weight, 
+            vertex.color = membership(c),
+            layout = layout,
+            edge.color = c("darkgrey","tomato2")[crossing(c, gplot) + 1])
+
+
+plot.igraph(gplot, edge.width = E(gplot)$weight*20, vertex.color = colors(length(igraph::degree(g))), vertex.label = "")
+colors <- colorRampPalette(colors = c('black', 'grey'))
+colors(length(igraph::degree(g)))
+

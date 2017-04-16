@@ -89,6 +89,7 @@ alphaDescent <- function(id){
 
 ranks$Move <- "None"
 for(row in 1:length(ranks[,1])){
+  ranks[row,'clanSize'] = length(filter(ranks, Year == ranks[row,'Year'], Clan == ranks[row,'Clan'])[,1])
   if(ranks[row,'ID']==ranks[row,'IDold']){
     start = end
     next
@@ -106,11 +107,11 @@ for(row in 1:length(ranks[,1])){
 par(fig = c(0,1,0,1))
 plot(data = ranks, Rank ~ Year, type = 'n', ylim = c(50,0), main = 'Talek')
 for(id in unique(ranks[ranks$Clan == 'talek',]$ID)){
-  clr <- ifelse(alphaDescent(id), 'blue', 'black')
+  #clr <- ifelse(alphaDescent(id), 'blue', 'black')
   #if(id == 'nav'){clr <- 'red'}
-  #clr <- 'black'
+  clr <- 'black'
   if('Up' %in% ranks[ranks$ID == id,'Move'] | 'Down' %in% ranks[ranks$ID == id, 'Move']){
-    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))
+    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
   }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))}
 }
 
@@ -118,7 +119,7 @@ par(fig = c(0.07,(.07+(6/25)+.02),0.10,.40), new = T)
 plot(data = ranks[ranks$Clan == 'south',], Rank ~ Year, type = 'n', ylim = c(20,0), main = 'South')
 for(id in unique(ranks[ranks$Clan == 'south',]$ID)){
   if('Up' %in% ranks[ranks$ID == id,'Move'] | 'Down' %in% ranks[ranks$ID == id, 'Move']){
-    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'black'))
+    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
   }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
 }
 
@@ -127,7 +128,7 @@ par(fig = c((.07+(6/25)+.02),(.33+.26), 0.10,.40), new = T)
 plot(data = ranks[ranks$Clan == 'north',], Rank ~ Year, type = 'n', ylim = c(20,0), main = 'North')
 for(id in unique(ranks[ranks$Clan == 'north',]$ID)){
   if('Up' %in% ranks[ranks$ID == id,'Move'] | 'Down' %in% ranks[ranks$ID == id, 'Move']){
-    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'black'))
+    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
   }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
 }
 
@@ -138,7 +139,7 @@ axis(1, at = seq(2009, 2012))
 axis(2, at = c(0, 5, 10, 15, 20))
 for(id in unique(ranks[ranks$Clan == 'hz',]$ID)){
   if('Up' %in% ranks[ranks$ID == id,'Move'] | 'Down' %in% ranks[ranks$ID == id, 'Move']){
-    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'black'))
+    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
   }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
 }
 
@@ -202,12 +203,12 @@ p6 <- glm(data = ranks, fitness2yo ~ stan.rank.model + is.alpha, family = 'poiss
 
 #####bin by stan rank for plotting
 numbins <- 20
-binedge <- c(seq(0,1.999999, length.out = numbins-1), 2)
+binedge <- c(seq(0,2.00001, length.out = numbins-1), 2)
 ranks$rank.bin <- cut(ranks$stan.rank.model, binedge)
 
 fitRanksBin <- aggregate(x = ranks, by = list(ranks$rank.bin), FUN = mean, na.rm = T)[,c('Group.1', 'fitness2yo', 'stan.rank.model')]
 ranks.ordered <- ranks[order(ranks$stan.rank.model),]  
- 
+
 ####Model with quadratic 
 plot(fitRanksBin$stan.rank.model, fitRanksBin$fitness2yo, ylim = c(0,1), lwd = 3)
 lines(ranks.ordered$stan.rank.model, exp(fixef(p3)[1] + fixef(p3)[2]*ranks.ordered$stan.rank.model + fixef(p3)[3]*(ranks.ordered$stan.rank.model^2) + fixef(p3)[4]*ranks.ordered$is.alpha), lwd = 3)
@@ -216,6 +217,10 @@ lines(ranks.ordered$stan.rank.model, exp(fixef(p3)[1] + fixef(p3)[2]*ranks.order
 plot(fitRanksBin$stan.rank.model, fitRanksBin$fitness2yo, ylim = c(0,1), lwd = 3)
 lines(ranks.ordered$stan.rank.model, exp(fixef(p4)[1] + fixef(p4)[2]*ranks.ordered$stan.rank.model + fixef(p4)[3]*ranks.ordered$is.alpha), lwd = 3)
 
+
+###Variance
+fitRanksBinVar <- aggregate(x = ranks, by = list(ranks$rank.bin), FUN = sd, na.rm = T)[,c('Group.1', 'fitness2yo', 'stan.rank.model')]
+plot(fitRanksBinVar$stan.rank.model, fitRanksBinVar$fitness2yo, ylim = c(0,1), lwd = 3)
 
 
 #####Model with rethinking
@@ -244,8 +249,24 @@ shade(mu.PI, srm.seq)##
 
 
 ##############################Observed Fitness########################
+obsFit <- data.frame()
+fitCutoff <- 3
+rank.move <- filter(ranks, Move != 'None')
+for(row in 1:length(rank.move[,1])){
+  if(!length(ranks[ranks$Clan == rank.move[row,'Clan'] & ranks$Year == (rank.move[row,'Year']+fitCutoff),1])){next}
+  #if(!rank.move[row,'ID'] %in% ranks[ranks$Year == (rank.move[row,'Year']+fitCutoff),'ID']){next}
+  fit <- mean(filter(ranks, ID == rank.move[row,'ID'],
+                     Year > rank.move[row, 'Year'],
+                     Year <= rank.move[row,'Year']+fitCutoff
+                     )$fitness2yo)
+  longevity <- length(unique(ranks[rank.move[row,'ID'] %in% ranks$ID]$Year))
+  obsFit <- rbind(obsFit, c(rank.move[row,c('Year', 'ID', 'Rank', 'stan.rank', 'dRank','Age', 'Move')], fit = fit))
+}
 
-
+boxplot(data = obsFit, fit ~ Move)
+ggplot(data = obsFit, aes(y = fit, x = stan.rank, col = Move))+
+  geom_point()+
+  geom_smooth(method = lm)
 ######################################################################
 
 
@@ -336,8 +357,8 @@ ggplot(data = filter(ranks, obsTime != 0), aes(y = coalPart, x = Move, col = Ran
   geom_point()
 
 
-
-
+summary(glm.nb(data = ranks, fitness2yo ~ stan.rank * clanSize))
+summary(glm.nb(data = ranks, fitness2yo ~ stan.rank))
 
 
 
