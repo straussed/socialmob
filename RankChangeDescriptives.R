@@ -182,3 +182,39 @@ for(clan in unique(ranks$Clan)){
 }
 krule.count/newf.count
 
+
+result <- c()
+alphas <- c(unique(filter(ranks, ranks$Rank == 1)$ID), 'kb')
+alpha_data <- tibble(ID = NA, Year = NA, Rate = NA)
+alphas_that_recuse <- tibble(ID = c('kb', 'clov', 'hel'),
+                             Year = c(1988, 2012, 2014))
+for(row in 1:tibdim(alphas_that_recuse)){
+  alpha = alphas_that_recuse[row,]$ID
+  birth_year <- as.numeric(format(tblHyenas[tblHyenas$ID == alpha,]$FirstSeen, '%Y'))
+  last_year <- as.numeric(format(tblHyenas[tblHyenas$ID == alpha,]$LastSeen, '%Y'))
+  change_year <- alphas_that_recuse[row,]$Year
+  
+  for(year in birth_year:change_year){
+    repro_rate <- tibdim(filter(tblHyenas, Mom == alpha, format(Birthdate, '%Y')  < year, format(Birthdate, '%Y')  >= year-3))/3
+    alpha_data <- add_row(alpha_data, ID = alpha, Year = year, Rate = repro_rate)
+  }
+}
+
+
+##########
+ggplot(data = filter(ranks, RankChange != 'None'), aes(stan.rank))+
+  geom_histogram(bins = 22)+
+  xlab('Rank') + 
+  main('Rank changes are concen')
+
+ggplot(data = filter(ranks, RankCategory == 'High'), aes(y=abs(RankDiffAbs),x=ai_top3_deg))+
+  geom_point()+
+  geom_smooth(method = lm)+
+  theme_classic()
+
+
+####Rank changes after death of alpha###
+tibble(ID = c('koi', 'bsh', 'mrph', 'rbc'),
+        ChangeAfterDeath = c('yes', 'yes', 'yes', 'yes'))
+
+
