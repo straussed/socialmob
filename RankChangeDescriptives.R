@@ -29,26 +29,40 @@ for(id in unique(ranks[ranks$Clan == 'talek',]$ID)){
   #clr <- ifelse(alphaDescent(id), 'blue', 'black')
   #if(id == 'nav'){clr <- 'red'}
   clr <- 'black'
-  if('Up' %in% ranks[ranks$ID == id,'RankChange'] | 'Down' %in% ranks[ranks$ID == id, 'RankChange']){
-    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
-  }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))}
+  # if('Up' %in% ranks[ranks$ID == id,'RankChange'] | 'Down' %in% ranks[ranks$ID == id, 'RankChange']){
+  #   with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
+  # }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))}
+  with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))
+  if(ranks[which(ranks$ID == id)[1],]$RankChange != 'None'){
+    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = '!', cex = 1, font = 2, adj = 1)
+    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = 'O', cex = 1.5, font = 1, adj = .62)
+  }#else{text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = "•, cex = .8)}
 }
 
 par(fig = c(0.07,(.07+(6/25)+.02),0.10,.40), new = T)
 plot(data = ranks[ranks$Clan == 'south',], Rank ~ Year, type = 'n', ylim = c(25,0), main = 'South')
 for(id in unique(ranks[ranks$Clan == 'south',]$ID)){
-  if('Up' %in% ranks[ranks$ID == id,'RankChange'] | 'Down' %in% ranks[ranks$ID == id, 'RankChange']){
-    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
-  }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+  # if('Up' %in% ranks[ranks$ID == id,'RankChange'] | 'Down' %in% ranks[ranks$ID == id, 'RankChange']){
+  #   with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
+  # }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+  with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))
+  if(ranks[which(ranks$ID == id)[1],]$RankChange != 'None'){
+    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = '!', cex = 1, font = 2, adj = 1)
+    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = 'O', cex = 1.5, font = 1, adj = .62)  }
 }
 
 par(fig = c(0,1,0,1), new = T)
 par(fig = c((.07+(6/25)+.02),(.33+.26), 0.10,.40), new = T)
 plot(data = ranks[ranks$Clan == 'north',], Rank ~ Year, type = 'n', ylim = c(20,0), main = 'North')
 for(id in unique(ranks[ranks$Clan == 'north',]$ID)){
-  if('Up' %in% ranks[ranks$ID == id,'RankChange'] | 'Down' %in% ranks[ranks$ID == id, 'RankChange']){
-    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
-  }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+  # if('Up' %in% ranks[ranks$ID == id,'RankChange'] | 'Down' %in% ranks[ranks$ID == id, 'RankChange']){
+  #   with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
+  # }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+  with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))
+  if(ranks[which(ranks$ID == id)[1],]$RankChange != 'None'){
+    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = '!', cex = 1, font = 2, adj = 1)
+    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = 'O', cex = 1.5, font = 1, adj = .62)
+  }
 }
 
 par(fig = c(0,1,0,1), new = T)
@@ -57,9 +71,14 @@ plot(data = ranks[ranks$Clan == 'hz',], Rank ~ Year, type = 'n', ylim = c(20,0),
 axis(1, at = seq(2009, 2015))
 axis(2, at = c(0, 5, 10, 15, 20))
 for(id in unique(ranks[ranks$Clan == 'hz',]$ID)){
-  if('Up' %in% ranks[ranks$ID == id,'RankChange'] | 'Down' %in% ranks[ranks$ID == id, 'RankChange']){
-    with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
-  }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+  # if('Up' %in% ranks[ranks$ID == id,'RankChange'] | 'Down' %in% ranks[ranks$ID == id, 'RankChange']){
+  #   with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = 'red'))
+  # }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))}
+  with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5))
+  if(ranks[which(ranks$ID == id)[1],]$RankChange != 'None'){
+    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = '!', cex = 1, font = 2, adj = 1)
+    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = 'O', cex = 1.5, font = 1, adj = .62)
+  }
 }
 
 
