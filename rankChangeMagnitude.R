@@ -165,18 +165,30 @@ for(i in 1:iterations){
   rank_diff_perm[,i] <- ranks.perm$RankDiffAbs
 }
 
-par(mfrow = c(1,2))
-ai_plot <- hist(perm_coef$ai_deg, breaks = 50, col = 'black',
-                main = 'Effects from model with all allies\n>High status<',
-                xlab = 'Effect of AI with all allies')
-segments(x1 = obs_coef$ai_deg, x0 = obs_coef$ai_deg, y0 = 0, y1 = max(ai_plot$counts), col = 'red',lty=2,lwd=2)
-text(x = -.015, y = 500, paste0('p = ', 2*tibdim(which(perm_coef$ai_deg >= obs_coef$ai_deg))/iterations))
+# par(mfrow = c(1,2))
+# ai_plot <- hist(perm_coef$ai_deg, breaks = 50, col = 'black',
+#                 main = 'Effects from model with all allies\n>High status<',
+#                 xlab = 'Effect of AI with all allies')
+# segments(x1 = obs_coef$ai_deg, x0 = obs_coef$ai_deg, y0 = 0, y1 = max(ai_plot$counts), col = 'red',lty=2,lwd=2)
+# text(x = -.015, y = 500, paste0('p = ', 2*tibdim(which(perm_coef$ai_deg >= obs_coef$ai_deg))/iterations))
+# 
+# ai_top3_plot <- hist(perm_coef$ai_top3_deg, breaks = 50, col = 'black',
+#                      xlab = 'Effect of AI with top allies',
+#                      main = '')
+# segments(x1 = obs_coef$ai_top3_deg, x0 = obs_coef$ai_top3_deg, y0 = 0, y1 = max(ai_top3_plot$counts), col = 'red',lty=2,lwd=2)
+# text(x = .5, y = 500, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations))
 
-ai_top3_plot <- hist(perm_coef$ai_top3_deg, breaks = 50, col = 'black',
-                     xlab = 'Effect of AI with top allies',
-                     main = '')
-segments(x1 = obs_coef$ai_top3_deg, x0 = obs_coef$ai_top3_deg, y0 = 0, y1 = max(ai_top3_plot$counts), col = 'red',lty=2,lwd=2)
-text(x = .5, y = 500, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations))
+range <- c(min(perm_coef$ai_top3_deg)-.005, max(perm_coef$ai_top3_deg, obs_coef$ai_top3_deg) + .005)
+mar.default <- c(5,4,4,2) + 0.1
+par(mfrow = c(1,1), family = 'Trebuchet MS', mar = mar.default + c(0, 1, 0, 0))
+d <- density(perm_coef$ai_top3_deg)
+ai_top3_plot <- plot(d, lwd = 6, col = 'grey87',
+                       main = paste0('Effect size = ', round(obs_coef$ai_top3_deg, digits = 3), ', ', 'p = ', round(2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations, digits = 3)),
+                       xlab = 'Degree of association',
+                       cex.lab=2, cex.axis=2, cex.main=2,
+                       xlim = range)
+polygon(d, col = 'grey87', border = 'grey87')
+abline(v = obs_coef$ai_top3_deg, col = 'dodgerblue1', lty=2, lwd=6)
 
 ai_perm_stacked <- tibble(ai_all_deg = rep(ranks_mod$ai_deg, iterations),
                           ai_top_deg = rep(ranks_mod$ai_top3_deg, iterations),
@@ -245,19 +257,30 @@ for(i in 1:iterations){
   rank_diff_perm[,i] <- ranks.perm$RankDiffAbs
 }
 
-par(mfrow = c(1,2))
-ai_plot <- hist(perm_coef$ai_deg, breaks = 50, col = 'black',
-                main = 'Effects from model with all allies\n>Low status<',
-                xlab = 'Effect of AI with all allies')
-segments(x1 = obs_coef$ai_deg, x0 = obs_coef$ai_deg, y0 = 0, y1 = max(ai_plot$counts), col = 'red', lty = 2, lwd = 2)
-text(x = -.022, y = 600, paste0('p = ', 2*tibdim(which(perm_coef$ai_deg >= obs_coef$ai_deg))/iterations))
+# par(mfrow = c(1,2))
+# ai_plot <- hist(perm_coef$ai_deg, breaks = 50, col = 'black',
+#                 main = 'Effects from model with all allies\n>Low status<',
+#                 xlab = 'Effect of AI with all allies')
+# segments(x1 = obs_coef$ai_deg, x0 = obs_coef$ai_deg, y0 = 0, y1 = max(ai_plot$counts), col = 'red', lty = 2, lwd = 2)
+# text(x = -.022, y = 600, paste0('p = ', 2*tibdim(which(perm_coef$ai_deg >= obs_coef$ai_deg))/iterations))
+# 
+# ai_top3_plot <- hist(perm_coef$ai_top3_deg, breaks = 50, col = 'black',
+#                      main = 'Effects from model with top allies\n>Low status<',
+#                      xlab = 'Effect of AI with top allies')
+# segments(x1 = obs_coef$ai_top3_deg, x0 = obs_coef$ai_top3_deg, y0 = 0, y1 = max(ai_top3_plot$counts), col = 'red', lty = 2, lwd = 2)
+# text(x = -.09, y = 450, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations))
 
-ai_top3_plot <- hist(perm_coef$ai_top3_deg, breaks = 50, col = 'black',
-                     main = 'Effects from model with top allies\n>Low status<',
-                     xlab = 'Effect of AI with top allies')
-segments(x1 = obs_coef$ai_top3_deg, x0 = obs_coef$ai_top3_deg, y0 = 0, y1 = max(ai_top3_plot$counts), col = 'red', lty = 2, lwd = 2)
-text(x = -.09, y = 450, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations))
-
+range <- c(min(perm_coef$ai_top3_deg)-.005, max(perm_coef$ai_top3_deg, obs_coef$ai_top3_deg) + .005)
+mar.default <- c(5,4,4,2) + 0.1
+par(mfrow = c(1,1), family = 'Trebuchet MS', mar = mar.default + c(0, 1, 0, 0))
+d <- density(perm_coef$ai_top3_deg)
+ai_top3_plot <- plot(d, lwd = 6, col = 'grey87',
+                     main = paste0('Effect size = ', round(obs_coef$ai_top3_deg, digits = 3), ', ', 'p = ', round(2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations, digits = 3)),
+                     xlab = 'Degree of association',
+                     cex.lab=2, cex.axis=2, cex.main=2,
+                     xlim = range)
+polygon(d, col = 'grey87', border = 'grey87')
+abline(v = obs_coef$ai_top3_deg, col = 'dodgerblue1', lty=2, lwd=6)
 
 ai_perm_stacked <- bind_rows(ai_perm_stacked,
                              tibble(ai_all_deg = rep(ranks_mod$ai_deg, iterations),
@@ -287,12 +310,13 @@ facet_labels = c(High = 'High ranking individuals', Low = 'Low ranking individua
 colors = c('dodgerblue1', 'grey87')
   
 top_plot <- ggplot(data = ai_perm_stacked, aes(x = rank_change, y = ai_top_deg, fill = network)) + 
-  geom_boxplot(alpha = .7)+
+  geom_boxplot(alpha = .7, outlier.shape = NA)+
   scale_fill_manual(values = colors, name = '') +
   theme_bw() + 
   facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
   xlab('Direction of rank change')+
-  ylab('Total degree of association with top allies')
+  ylab('Total degree of association with top allies')#+
+  coord_cartesian(ylim= c(0,1.5))
 top_plot +
   theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
         strip.text.x = element_text(face = 'bold', size = 12,family = 'Trebuchet MS'),

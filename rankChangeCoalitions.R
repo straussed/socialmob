@@ -8,7 +8,38 @@
 #library(ggplot2)
 #source("/mnt/home/straus46/RankChangeModels/Fisibase/fisibasetidy/ReadTidyData.R")
 source("~/Documents/Fisibase/fisibasetidy/ReadTidyData.R")
+library(magrittr)
 
+########Calculate AI degree####################
+#Create ai networks for each clan and year
+for(clan in unique(ranks$Clan)){
+  for(year in unique(ranks[ranks$Clan == clan,]$Year)){
+    ids <- ranks[ranks$Clan == clan & ranks$Year == year,]$ID
+    ###session data
+    sess.year <- filter(hps, Hyena %in% ids, format(Date, '%Y') == year)
+    if(tibdim(sess.year)){
+      sess.year <- add_column(sess.year, Clan = rep(clan, tibdim(sess.year)), Year = rep(year, tibdim(sess.year)))
+      ai.count.net <- matrix(data = 0, nrow = length(ids), ncol = length(ids), dimnames = list(ids, ids))
+      for(sess.num in unique(sess.year$Session)){
+        ids.sess <- as.matrix(expand.grid(sess.year[sess.year$Session == sess.num,]$Hyena, sess.year[sess.year$Session == sess.num,]$Hyena))
+        ai.count.net[ids.sess] <- ai.count.net[ids.sess]+1
+      }
+      ai.net <- ai.count.net
+      for(a in rownames(ai.count.net)){
+        for(b in rownames(ai.count.net)){
+          ai.net[a,b] <- ai.count.net[a,b]/(ai.count.net[a,a] + ai.count.net[b,b] - ai.count.net[a,b])
+        }
+      }
+      diag(ai.net) <- 0
+      assign(paste('ai_net', year, clan, sep = '_'), ai.net)
+      assign(paste('ai_count_net', year, clan, sep = '_'), ai.count.net)
+    }else{
+      assign(paste('ai_net', year, clan, sep = '_'), NULL)
+    }
+  }
+}
+
+####Calculate coalition degree####
 for(clan in unique(ranks$Clan)){
   clanRanks <- filter(ranks, Clan == clan)
   for(year in unique(clanRanks$Year)){
@@ -23,7 +54,7 @@ for(clan in unique(ranks$Clan)){
     if(!tibdim(coalsTemp)){next}
     for(row in 1:tibdim(coalsTemp)){
       focal <- coalsTemp[row,]$Agg
-      for(alter in strsplit(coalsTemp[row,]$Group, ',')[[1]][-1]){
+      for(alter in unique(strsplit(coalsTemp[row,]$Group, ',')[[1]][-1])){
         if(alter %in% yearRanks$ID & alter != focal & focal %in% yearRanks$ID){
           coalPartners[coalPartners$Focal == focal & coalPartners$Alter == alter,'NumCoals'] <- coalPartners[coalPartners$Focal == focal & coalPartners$Alter == alter,'NumCoals'] + 1
         }
@@ -48,16 +79,176 @@ for(row in 1:tibdim(ranks)){
   focal <- ranks[row,]$ID
   if(exists(paste('coalNet', clan, year, sep = '_'))){
     coal_net <- get(paste('coalNet', clan, year, sep = '_'))
+    ai_net <- get(paste('ai_net', year, clan, sep = '_'))
+    coal_net_wtd <- coal_net/ai_net
+    coal_net_wtd[is.nan(coal_net_wtd)] <- 0
     if(tibdim(coal_net)){
       ranks[row,]$coal_deg <- sum(coal_net[focal,])
+      ranks[row,]$coal_deg_wtd <- sum(coal_net_wtd[focal,])
       ranks[row,]$coal_top3_deg <- coal_net[focal,order(coal_net[focal,], decreasing = T)[1:3]] %>% 
+        sum() 
+      ranks[row,]$coal_top3_wtd <- coal_net_wtd[focal,order(coal_net_wtd[focal,], decreasing = T)[1:3]] %>% 
         sum() 
     } 
   }
 }
 
 
-################Do permutations all ranks together###############
+
+##add metrics to ranks tibble
+ranks <- add_column(ranks, ai_deg = rep(NA, tibdim(ranks)),
+                    ai_top3_deg = rep(NA, tibdim(ranks))
+)
+
+for(row in 1:tibdim(ranks)){
+  year <- ranks[row,]$Year
+  clan <- ranks[row,]$Clan
+  focal <- ranks[row,]$ID
+  ai_net <- get(paste('ai_net', year, clan, sep = '_'))
+  if(tibdim(ai_net)){
+    ranks[row,]$ai_deg <- sum(ai_net[focal,])
+    ranks[row,]$ai_top3_deg <- ai_net[focal,order(ai_net[focal,], decreasing = T)[1:3]] %>% 
+      sum() 
+  }
+}
+
+
+
+################Do permutations all ranks together - unweighted coalitions###############
+
+ranks <- ranks %>%
+  mutate(RankCategory = cut(stan.rank, breaks = 2, labels = c('Low', 'High')))
+
+##Determine start and end years for each clan
+clans <- unique(ranks$Clan)
+clan_years <- tibble(Clan = clans, First = NA, Last = NA)
+for(row in 1:tibdim(clan_years$Clan)){
+  clan_years[row,'First'] <- filter(ranks, Clan == clan_years[row,][[1]])$Year %>% min(na.rm = T)
+  clan_years[row,'Last'] <- filter(ranks, Clan == clan_years[row,][[1]])$Year %>% max(na.rm = T)
+}
+
+ranks_mod <- anti_join(ranks, clan_years, by = c('Clan', 'Year' = 'First')) %>%
+  anti_join(clan_years, by = c('Clan', 'Year' = 'Last'))
+
+coal_perm_stacked <- tibble()
+#par(mfrow = c(2,2))
+for(category in list('High', 'Low')){
+  ranks_mod <- filter(ranks, RankCategory %in% category)
+  coal_perm_stacked <- bind_rows(coal_perm_stacked,
+                                 tibble(coal_all_deg = ranks_mod$coal_deg,
+                                        coal_top_deg = ranks_mod$coal_top3_deg,
+                                        rank_change = ranks_mod$RankDiffAbs,
+                                        rank_category = category,
+                                        network = 'Observed'))
+  
+  iterations <- 10000
+  
+  rank_perm_change <- matrix(NA, nrow=tibdim(ranks_mod), ncol=iterations)
+
+  coal_mod <- ranks_mod %>% glm(formula = RankDiffAbs ~ coal_deg, family = gaussian)
+  coal_top3_mod <- ranks_mod %>% glm(formula = RankDiffAbs ~ coal_top3_deg, family = gaussian)
+  
+  obs_coef <- as_tibble(cbind(coal_deg = coal_mod %>% coef() %>% .[2],
+                              coal_top3_deg = coal_top3_mod %>% coef() %>% .[2]))
+  perm_coef <- tibble(coal_deg = rep(NA, iterations), 
+                      coal_top3_deg = rep(NA, iterations))
+  
+  ranks.perm <- ranks_mod
+  ###Select variables to permute within##
+  ranks.perm$PermCategory <- paste(ranks_mod$Clan, ranks_mod$Year)
+  
+  for(i in 1:iterations){
+    ranks.perm %>% 
+      group_by(PermCategory) %>% 
+      sample_frac(replace = F) %>% 
+      ungroup() %>% 
+      select(RankDiffAbs) %>% .[[1]] ->
+      ranks.perm$RankDiffAbs
+    
+    ranks.perm %>%
+      glm(formula = RankDiffAbs ~ coal_deg, family = gaussian) %>%
+      coef() %>% .[2] -> perm_coef[i,1]
+    
+    ranks.perm %>%
+      glm(formula = RankDiffAbs ~ coal_top3_deg, family = gaussian) %>%
+      coef() %>% .[2] -> perm_coef[i,2]
+    
+    rank_perm_change[,i] <- as.character(ranks.perm$RankDiffAbs)
+  }
+  
+  coal_perm_stacked <- bind_rows(coal_perm_stacked,
+                               tibble(coal_all_deg = rep(ranks_mod$coal_deg, iterations),
+                                      coal_top_deg = rep(ranks_mod$coal_top3_deg, iterations),
+                                      rank_change = as.numeric(as.vector(rank_perm_change)),
+                                      rank_category = category,
+                                      network = 'Permuted'))
+  
+  # coal_plot <- hist(perm_coef$coal_deg, breaks = 50, col = 'black',
+  #                   main = paste0(category, '--All'),
+  #                   xlab = 'Coefficient estimate')
+  # segments(x1 = obs_coef$coal_deg, x0 = obs_coef$coal_deg, y0 = 0, y1 = max(ai_plot$counts), col = 'red', lty=2, lwd=2)
+  # text(x = -.018, y = 500, paste0('p = ', 2*tibdim(which(perm_coef$coal_deg >= obs_coef$coal_deg))/iterations))
+  # 
+  # coal_top3_plot <- hist(perm_coef$coal_top3_deg, breaks = 50, col = 'black',
+  #                        main = paste0(category, '--Top'),
+  #                        xlab = 'Total Degree of Coalitionary Aggression')
+  # segments(x1 = obs_coef$coal_top3_deg, x0 = obs_coef$coal_top3_deg, y0 = 0, y1 = max(coal_top3_plot$counts), col = 'red', lty=2, lwd=2)
+  # text(x = -.042, y = 300, paste0('p = ', 2*tibdim(which(perm_coef$coal_top3_deg >= obs_coef$coal_top3_deg))/iterations))
+  # 
+  range <- c(min(perm_coef$coal_top3_deg)-.005, max(perm_coef$coal_top3_deg, obs_coef$coal_top3_deg) + .005)
+  mar.default <- c(5,4,4,2) + 0.1
+  par(family = 'Trebuchet MS', mar = mar.default + c(0, 1, 0, 0))
+  d <- density(perm_coef$coal_top3_deg)
+  coal_top3_plot <- plot(d, lwd = 6, col = 'grey87',
+                         main = paste0('Effect size = ', round(obs_coef$coal_top3_deg, digits = 3), ', ', 'p = ', round(2*tibdim(which(perm_coef$coal_top3_deg >= obs_coef$coal_top3_deg))/iterations, digits = 3)),
+                         xlab = 'Degree of coalitionary aggression',
+                         cex.lab=2, cex.axis=2, cex.main=2,
+                         xlim = range)
+  polygon(d, col = 'grey87', border = 'grey87')
+  abline(v = obs_coef$coal_top3_deg, col = 'dodgerblue1', lty=2, lwd=6)
+}
+
+
+facet_labels = c(High = 'High ranking individuals', Low = 'Low ranking individuals')
+colors = c('dodgerblue1', 'grey87')
+
+coal_perm_stacked$rank_change_category <- ifelse(coal_perm_stacked$rank_change == 0,'None', 
+                                                 ifelse(coal_perm_stacked$rank_change < 0,'Down','Up'))
+coal_perm_stacked$rank_change_category %<>% factor(., levels = c('Down', 'None', 'Up'))
+
+top_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change_category, y = coal_top_deg, fill = network)) + 
+  geom_boxplot(alpha = .7, outlier.shape = NA)+
+  scale_fill_manual(values = colors, name = '') +
+  theme_bw() + 
+  facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
+  xlab('Direction of rank change')+
+  ylab('Total degree of coalitions with top allies')+
+  coord_cartesian(ylim= c(0,35))
+
+top_plot +
+  theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
+        strip.text.x = element_text(face = 'bold', size = 12,family = 'Trebuchet MS'),
+        axis.title = element_text(size = 14,family = 'Trebuchet MS'),
+        axis.text = element_text(size = 12, family = 'Trebuchet MS'),
+        legend.text = element_text(size = 12, family = 'Trebuchet MS'),
+        panel.grid.major = element_blank(),
+        panel.grid.minor= element_blank())
+
+
+
+all_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change, y = coal_all_deg, fill = network)) + 
+  geom_boxplot(alpha = .7, outlier.shape = NA)+
+  scale_fill_manual(values = colors, name = '') +
+  theme_bw() + 
+  facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
+  xlab('Direction of rank change')+
+  ylab('Total degree of coalitions with all allies')
+all_plot +
+  theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
+        strip.text.x = element_text(face = 'bold'))
+
+
+################Coalitions weighted by AI###############
 
 ranks <- ranks %>%
   mutate(RankCategory = cut(stan.rank, breaks = 2, labels = c('Low', 'High')))
@@ -76,25 +267,25 @@ ranks_mod <- anti_join(ranks, clan_years, by = c('Clan', 'Year' = 'First')) %>%
 coal_perm_stacked <- tibble()
 par(mfrow = c(2,2))
 for(category in list('High', 'Low')){
-  ranks_mod <- filter(ranks, RankChange != 'None', RankCategory %in% category)
+  ranks_mod <- filter(ranks, RankCategory %in% category)
   coal_perm_stacked <- bind_rows(coal_perm_stacked,
-                                 tibble(coal_all_deg = ranks_mod$coal_deg,
-                                        coal_top_deg = ranks_mod$coal_top3_deg,
-                                        rank_change = as.character(ranks_mod$RankChange),
+                                 tibble(coal_all_wtd = ranks_mod$coal_deg_wtd,
+                                        coal_top_wtd = ranks_mod$coal_top3_wtd,
+                                        rank_change = ranks_mod$RankDiffAbs,
                                         rank_category = category,
                                         network = 'Observed'))
   
   iterations <- 1000
   
   rank_perm_change <- matrix(NA, nrow=tibdim(ranks_mod), ncol=iterations)
-
-  coal_mod <- ranks_mod %>% glm(formula = RankChange ~ coal_deg, family = binomial)
-  coal_top3_mod <- ranks_mod %>% glm(formula = RankChange ~ coal_top3_deg, family = binomial)
   
-  obs_coef <- as_tibble(cbind(coal_deg = coal_mod %>% coef() %>% .[2],
-                              coal_top3_deg = coal_top3_mod %>% coef() %>% .[2]))
-  perm_coef <- tibble(coal_deg = rep(NA, iterations), 
-                      coal_top3_deg = rep(NA, iterations))
+  coal_mod <- ranks_mod %>% glm(formula = RankDiffAbs ~ coal_deg_wtd, family = gaussian)
+  coal_top3_mod <- ranks_mod %>% glm(formula = RankDiffAbs ~ coal_top3_wtd, family = gaussian)
+  
+  obs_coef <- as_tibble(cbind(coal_deg_wtd = coal_mod %>% coef() %>% .[2],
+                              coal_top3_wtd = coal_top3_mod %>% coef() %>% .[2]))
+  perm_coef <- tibble(coal_deg_wtd = rep(NA, iterations), 
+                      coal_top3_wtd = rep(NA, iterations))
   
   ranks.perm <- ranks_mod
   ###Select variables to permute within##
@@ -105,51 +296,57 @@ for(category in list('High', 'Low')){
       group_by(PermCategory) %>% 
       sample_frac(replace = F) %>% 
       ungroup() %>% 
-      select(RankChange) %>% .[[1]] ->
-      ranks.perm$RankChange
+      select(RankDiffAbs) %>% .[[1]] ->
+      ranks.perm$RankDiffAbs
     
     ranks.perm %>%
-      glm(formula = RankChange ~ coal_deg, family = binomial) %>%
+      glm(formula = RankDiffAbs ~ coal_deg_wtd, family = gaussian) %>%
       coef() %>% .[2] -> perm_coef[i,1]
     
     ranks.perm %>%
-      glm(formula = RankChange ~ coal_top3_deg, family = binomial) %>%
+      glm(formula = RankDiffAbs ~ coal_top3_wtd, family = gaussian) %>%
       coef() %>% .[2] -> perm_coef[i,2]
     
-    rank_perm_change[,i] <- as.character(ranks.perm$RankChange)
+    rank_perm_change[,i] <- as.character(ranks.perm$RankDiffAbs)
   }
   
   coal_perm_stacked <- bind_rows(coal_perm_stacked,
-                               tibble(coal_all_deg = rep(ranks_mod$coal_deg, iterations),
-                                      coal_top_deg = rep(ranks_mod$coal_top3_deg, iterations),
-                                      rank_change = as.vector(rank_perm_change),
-                                      rank_category = category,
-                                      network = 'Permuted'))
+                                 tibble(coal_all_wtd = rep(ranks_mod$coal_deg_wtd, iterations),
+                                        coal_top_wtd = rep(ranks_mod$coal_top3_wtd, iterations),
+                                        rank_change = as.numeric(as.vector(rank_perm_change)),
+                                        rank_category = category,
+                                        network = 'Permuted'))
   
-  coal_plot <- hist(perm_coef$coal_deg, breaks = 50, col = 'black',
+  coal_plot <- hist(perm_coef$coal_deg_wtd, breaks = 50, col = 'black',
                     main = paste0(category, '--All'),
                     xlab = 'Coefficient estimate')
-  segments(x1 = obs_coef$coal_deg, x0 = obs_coef$coal_deg, y0 = 0, y1 = max(ai_plot$counts), col = 'red', lty=2, lwd=2)
-  text(x = -.018, y = 500, paste0('p = ', tibdim(which(perm_coef$coal_deg >= obs_coef$coal_deg))/1000))
+  segments(x1 = obs_coef$coal_deg_wtd, x0 = obs_coef$coal_deg_wtd, y0 = 0, y1 = max(ai_plot$counts), col = 'red', lty=2, lwd=2)
+  text(x = -.018, y = 500, paste0('p = ', 2*tibdim(which(perm_coef$coal_deg_wtd >= obs_coef$coal_deg_wtd))/iterations))
   
-  coal_top3_plot <- hist(perm_coef$coal_top3_deg, breaks = 50, col = 'black',
+  coal_top3_plot <- hist(perm_coef$coal_top3_wtd, breaks = 50, col = 'black',
                          main = paste0(category, '--Top'),
                          xlab = 'Coefficient estimate')
-  segments(x1 = obs_coef$coal_top3_deg, x0 = obs_coef$coal_top3_deg, y0 = 0, y1 = max(coal_top3_plot$counts), col = 'red', lty=2, lwd=2)
-  text(x = -.042, y = 300, paste0('p = ', 2*tibdim(which(perm_coef$coal_top3_deg >= obs_coef$coal_top3_deg))/1000))
+  segments(x1 = obs_coef$coal_top3_wtd, x0 = obs_coef$coal_top3_wtd, y0 = 0, y1 = max(coal_top3_plot$counts), col = 'red', lty=2, lwd=2)
+  text(x = -.042, y = 300, paste0('p = ', 2*tibdim(which(perm_coef$coal_top3_wtd >= obs_coef$coal_top3_wtd))/iterations))
 }
 
 
 facet_labels = c(High = 'High ranking individuals', Low = 'Low ranking individuals')
 colors = c('dodgerblue1', 'grey87')
 
-top_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change, y = coal_top_deg, fill = network)) + 
-  geom_boxplot(alpha = .7)+
+coal_perm_stacked$rank_change_category <- ifelse(coal_perm_stacked$rank_change == 0,'None', 
+                                                 ifelse(coal_perm_stacked$rank_change < 0,'Down','Up'))
+coal_perm_stacked$rank_change_category %<>% factor(., levels = c('Up', 'None', 'Down'))
+
+top_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change_category, y = coal_top_wtd, fill = network)) + 
+  geom_boxplot(alpha = .7, outlier.shape = NA)+
   scale_fill_manual(values = colors, name = '') +
   theme_bw() + 
   facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
   xlab('Direction of rank change')+
-  ylab('Total degree of coalitions with top allies')
+  ylab('Total degree of coalitions with top allies')#+
+  #coord_cartesian(ylim= c(0,35))
+
 top_plot +
   theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
         strip.text.x = element_text(face = 'bold', size = 12,family = 'Trebuchet MS'),
@@ -159,8 +356,8 @@ top_plot +
 
 
 
-all_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change, y = coal_all_deg, fill = network)) + 
-  geom_boxplot(alpha = .7)+
+all_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change_category, y = coal_all_wtd, fill = network)) + 
+  geom_boxplot(alpha = .7, outlier.shape = NA)+
   scale_fill_manual(values = colors, name = '') +
   theme_bw() + 
   facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
@@ -169,5 +366,3 @@ all_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change, y = coal_all_d
 all_plot +
   theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
         strip.text.x = element_text(face = 'bold'))
-
-
