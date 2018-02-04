@@ -11,6 +11,7 @@ source("~/Documents/Fisibase/fisibasetidy/ReadTidyData.R")
 library(magrittr)
 library(tidyverse)
 library(igraph)
+library(grid)
 
 ########Calculate AI degree####################
 #Create ai networks for each clan and year
@@ -41,11 +42,24 @@ for(clan in unique(ranks$Clan)){
   }
 }
 
-####Calculate coalition degree####
+####Calculate coalition degree (instead of rate)####
 for(clan in unique(ranks$Clan)){
   clanRanks <- filter(ranks, Clan == clan)
   for(year in unique(clanRanks$Year)){
     yearRanks <- filter(clanRanks, Year == year)
+    ids <- yearRanks$ID
+    ##Rate not included in analysis. Low rankers have inflated rates due to 
+    ##low #s of observation
+    
+    # sess.year <- filter(hps, Hyena %in% ids, format(Date, '%Y') == year)
+    # time_matrix <- matrix(data = 0, nrow = length(ids), ncol = length(ids), dimnames = list(ids, ids))
+    # for(sess.num in unique(sess.year$Session)){
+    #   ids.sess <- as.matrix(expand.grid(sess.year[sess.year$Session == sess.num,]$Hyena, sess.year[sess.year$Session == sess.num,]$Hyena))
+    #   time <- as.numeric(filter(sessions, Session == sess.num)$Stop) - as.numeric(filter(sessions, Session == sess.num)$Start)
+    #   if(!is.na(time) & time >= 0) time_matrix[ids.sess] <- time_matrix[ids.sess]+time
+    # }
+    ##Convert time matrix to hours
+    time_matrix <- time_matrix/(60*60)
     ####Coalition network
     cnet <- matrix(nrow = tibdim(yearRanks), ncol = tibdim(yearRanks), dimnames = list(yearRanks$ID, yearRanks$ID), data = 0)
     coalsTemp <- filter(aggsFull, Year == year, Clan == clan, Group != 'n')
@@ -64,6 +78,10 @@ for(clan in unique(ranks$Clan)){
     }
     coalPartnersPaired <- coalPartners[coalPartners$NumCoals != 0,]
     cnet[as.matrix(coalPartnersPaired[,1:2])] <- coalPartnersPaired[,3]
+    
+    #divide by time spent to gether for rates
+    #cnet[1:length(ids), 1:length(ids)] <- as.vector(cnet) / as.vector(time_matrix)
+    #cnet[is.nan(cnet)] <- 0
     assign(paste('coalNet', clan, year, sep = '_'), cnet)
   }
 }
@@ -450,7 +468,6 @@ yearly_rank_change <- ranks %>% group_by(Year, Clan) %>% summarize(total_change 
 yearly_rank_change <- yearly_rank_change[order(yearly_rank_change$total_change),]
 
 plot(yearly_rank_change$total_change ~ yearly_rank_change$coal_skew)
-par(mfrow = c(1,1))
 
 
 ranks_yearly <- left_join(ranks, yearly_rank_change, by = c('Clan', 'Year'))
@@ -498,7 +515,29 @@ ggplot(data = perm_data, aes(x = coal_skew, y = total_change))+
 p = 2*length(which(perm_coef$coal_skew > obs_coef$coal_skew))/iterations
 
 
+yearly_rank_change$density <- NA
+yearly_rank_change$num_coals <- NA
+yearly_rank_change$modularity <- NA
 
+for(clan in unique(yearly_rank_change$Clan)){
+  for(year in unique(filter(yearly_rank_change, Clan == clan)$Year)){
+    coal_net <- get(paste('coalNet', clan, year, sep = '_')) %>% graph_from_adjacency_matrix(mode = 'undirected', weighted = TRUE)
+    if(!ecount(coal_net)){next}
+    sum(edge_attr(coal_net)$weight) ->
+      yearly_rank_change[yearly_rank_change$Clan == clan & yearly_rank_change$Year == year,]$num_coals
+    graph.density(coal_net) ->
+      yearly_rank_change[yearly_rank_change$Clan == clan & yearly_rank_change$Year == year,]$density
+    
+    if(ecount(coal_net))
+    coal_net_connected <- delete_vertices(coal_net, which(degree(coal_net) == 0))
+    cluster_fast_greedy(coal_net_connected) %>% modularity() ->
+      yearly_rank_change[yearly_rank_change$Clan == clan & yearly_rank_change$Year == year,]$modularity
+  }
+}
+
+plot(yearly_rank_change$total_change ~ yearly_rank_change$modularity)
+
+summary(glm(yearly_rank_change, formula = total_change ~ modularity, family = 'poisson'))
 
 
 ####Example of permutation####
@@ -542,7 +581,7 @@ p <- ggplot(data = data.frame(Rank = rep(ranks$Rank, i), coal_deg = coal_deg), a
 ggsave(p, filename = paste0('~/Documents/Presentations/BEACON Talk 2017/permutation/permutation_0.png'),
        device = 'png', dpi = 300, width = 5, height = 5, units = 'in')
 
-for(i in 1:20){
+for(i in 1:100){
   coal_deg <- c()
   for(ii in 1:i){
     coal_deg <- c(coal_deg, coal_perm[,ii])
@@ -557,8 +596,8 @@ for(i in 1:20){
     ylab('')
   #name <- ifelse(i < 10, paste0('0', i), i)
   ggsave(plot = p, filename = paste0('~/Documents/Presentations/BEACON Talk 2017/permutation/permutation_', i, '.png'),
-        device = 'png', dpi = 300, width = 5, height = 5, units = 'in')
-        
+         device = 'png', dpi = 300, width = 5, height = 5, units = 'in')
+  
   #dev.off()
 }
 
@@ -571,6 +610,450 @@ p <- ggplot(data = data.frame(Rank = rep(ranks$Rank, i), coal_deg = coal_deg), a
   theme_classic()+
   xlab('')+
   ylab('')
-ggsave(plot = p, filename = paste0('~/Documents/Presentations/BEACON Talk 2017/permutation/permutation_21.png'),
+ggsave(plot = p, filename = paste0('~/Documents/Presentations/BEACON Talk 2017/permutation/permutation_101.png'),
        device = 'png', dpi = 300, width = 5, height = 5, units = 'in')
 
+
+
+
+
+#####Look at extreme cases######
+
+old_ranks <- ranks[,c('Rank', 'Year', 'Clan', 'IDold')]
+old_ranks$RankChange <- left_join(old_ranks, ranks, by = c('IDold' = 'ID', 'Clan', 'Year'))$RankChange
+
+fall_far <- filter(ranks, RankDiffAbs <= -5)
+fall_from_top <- filter(old_ranks, RankChange == 'Down', Rank < 4) %>% semi_join(ranks, ., by = c('Year', 'Clan', 'ID' = 'IDold'))
+extreme_down <- unique(rbind(fall_far, fall_from_top))
+                      
+
+rise_far <- filter(ranks, RankDiffAbs >= 5)
+rise_to_top <- filter(ranks, Rank < 4, RankChange == 'Up')
+extreme_up <- unique(rbind(rise_far, rise_to_top))
+
+top <- ggplot(data = extreme_up, aes(x = coal_top3_deg, y = ai_top3_deg))+
+  geom_point(col = 'red') + 
+  geom_point(data = extreme_down, aes(x = coal_top3_deg, y = ai_top3_deg), col = 'blue')+
+  theme_classic()+
+  xlim(0,40)+
+  ggtitle('Year of Change')+
+  xlab('Coalition degree')+
+  ylab('AI degree')
+
+all <- ggplot(data = extreme_up, aes(x = coal_deg, y = ai_deg))+
+  geom_point(col = 'red') + 
+  geom_point(data = extreme_down, aes(x = coal_deg, y = ai_deg), col = 'blue')+
+  theme_classic()+
+  xlim(0,40)+
+  ggtitle('Year of Change')+
+  xlab('Coalition degree')+
+  ylab('AI degree')
+
+multiplot(all, top)
+
+
+
+extreme_up_previous <- semi_join(ranks, mutate(extreme_up, Prev_Year = Year - 1), by = c('ID', 'Clan', 'Year' = 'Prev_Year'))
+
+extreme_down_previous <- semi_join(ranks, mutate(extreme_down, Prev_Year = Year - 1), by = c('ID', 'Clan', 'Year' = 'Prev_Year'))
+
+previous_top <- ggplot(data = extreme_up_previous, aes(x = coal_top3_deg, y = ai_top3_deg))+
+  geom_point(col = 'red') + 
+  geom_point(data = extreme_down_previous, aes(x = coal_top3_deg, y = ai_top3_deg), col = 'blue')+
+  theme_classic()+
+  xlim(0,40)+
+  ggtitle('Year before Change')+
+  xlab('Coalition degree')+
+  ylab('AI degree')
+
+previous_all <- ggplot(data = extreme_up_previous, aes(x = coal_deg, y = ai_deg))+
+  geom_point(col = 'red') + 
+  geom_point(data = extreme_down_previous, aes(x = coal_deg, y = ai_deg), col = 'blue')+
+  theme_classic()+
+  xlim(0,40)+
+  ggtitle('Year before Change')+
+  xlab('Coalition degree')+
+  ylab('AI degree')
+
+
+extreme_up_next <- semi_join(ranks, mutate(extreme_up, Prev_Year = Year + 1), by = c('ID', 'Clan', 'Year' = 'Prev_Year'))
+
+extreme_down_next <- semi_join(ranks, mutate(extreme_down, Prev_Year = Year + 1), by = c('ID', 'Clan', 'Year' = 'Prev_Year'))
+
+next_top <- ggplot(data = extreme_up_next, aes(x = coal_top3_deg, y = ai_top3_deg))+
+  geom_point(col = 'red') + 
+  geom_point(data = extreme_down_next, aes(x = coal_top3_deg, y = ai_top3_deg), col = 'blue')+
+  theme_classic()+
+  xlim(0,40)+
+  ggtitle('Year after Change')+
+  xlab('Coalition degree')+
+  ylab('AI degree')
+
+next_all <- ggplot(data = extreme_up_next, aes(x = coal_deg, y = ai_deg))+
+  geom_point(col = 'red') + 
+  geom_point(data = extreme_down_next, aes(x = coal_deg, y = ai_deg), col = 'blue')+
+  theme_classic()+
+  xlim(0,40)+
+  ggtitle('Year after Change')+
+  xlab('Coalition degree')+
+  ylab('AI degree')
+
+
+
+multiplot(previous_top, top, next_top)
+
+
+####Fitness####
+tblHyenas$Survive2 <- FALSE 
+tblHyenas$Survive2 <- ifelse(is.na(tblHyenas$Disappeared), TRUE, FALSE)
+tblHyenas[tblHyenas$Survive2 == FALSE,]$Survive2 <- with(tblHyenas[tblHyenas$Survive2 == FALSE,], 
+                                                         ifelse(!is.na(Birthdate) & Disappeared - Birthdate >= (365*2), TRUE, FALSE))
+tblHyenas$BirthYear <- format(tblHyenas$Birthdate, '%Y')
+yearly_cubs <- tblHyenas %>% group_by(BirthYear, Mom) %>% summarize(YearlyCubs = sum(Survive2))
+
+
+rise_to_top$yearly.cubs.after.change <- NA
+for(row in 1:nrow(rise_to_top)){
+  last_year <- filter(tblHyenas, ID == rise_to_top[row,]$ID)$LastSeen %>%
+    format('%Y') %>% as.numeric()
+  rise_to_top[row,]$yearly.cubs.after.change <- 
+    sum(filter(yearly_cubs, 
+               BirthYear <= last_year, 
+               Mom == rise_to_top[row,]$ID)$YearlyCubs) / 
+    (last_year - rise_to_top[row,]$Year)  
+    
+  
+}
+
+
+fall_from_top$yearly.cubs.after.change <- NA
+for(row in 1:nrow(fall_from_top)){
+  last_year <- filter(tblHyenas, ID == fall_from_top[row,]$ID)$LastSeen %>%
+    format('%Y') %>% as.numeric()
+  fall_from_top[row,]$yearly.cubs.after.change <- 
+    sum(filter(yearly_cubs, 
+               BirthYear <= last_year, 
+               Mom == fall_from_top[row,]$ID)$YearlyCubs) / 
+    (last_year - fall_from_top[row,]$Year)
+}
+
+
+yearly_rs <- rbind(data.frame(ID = rise_to_top$ID,
+                              yearly.cubs.after.change = rise_to_top$yearly.cubs.after.change,
+                              RankChange = 'Up'),
+                   data.frame(ID = fall_from_top$ID,
+                              yearly.cubs.after.change = fall_from_top$yearly.cubs.after.change,
+                              RankChange = 'Down'))
+
+plot(yearly_rs$yearly.cubs.after.change ~ factor(yearly_rs$RankChange))
+
+###Survival### -- Summary: RankChange has no effect on survival
+library(survival)
+library(survminer)
+##Deal with two 'Both' conditions
+ranks[ranks$RankChange == 'Both' & ranks$ID == 'peep',]$RankChange <- 'Up'
+ranks[ranks$RankChange == 'Both' & ranks$ID == 'lg',]$RankChange <- 'None'
+survival_df <- data.frame(ID = ranks$ID, Year = ranks$Year, Rank = ranks$Rank,
+                          RankChange = ranks$RankChange,
+                          RankDiff = ranks$RankDiffAbs,
+                          Disappeared = left_join(ranks, tblHyenas, by = 'ID')$Disappeared,
+                          Birthdate = left_join(ranks, tblHyenas, by = 'ID')$Birthdate,
+                          LastSeen = left_join(ranks, tblHyenas, by = 'ID')$LastSeen,
+                          FirstSeen = left_join(ranks, tblHyenas, by = 'ID')$FirstSeen,
+                          type = 'right',
+                          time = NA,
+                          event = NA)
+
+survival_df$RankChange <- factor(survival_df$RankChange, levels = c('Down', 'None', 'Up'))
+
+for(row in 1:nrow(survival_df)){
+  if(is.na(survival_df$Birthdate[row])){ ##Birthdate missing
+    if(is.na(survival_df$Disappeared[row])){
+      survival_df$time[row] <- survival_df$LastSeen[row] - survival_df$FirstSeen[row]
+      survival_df$event[row] <- 0
+    }else{
+      survival_df$time[row] <- survival_df$Disappeared[row] - survival_df$FirstSeen[row]
+      survival_df$event[row] <- 1
+    }
+  }else{###Birthday present
+    if(is.na(survival_df$Disappeared[row])){
+      survival_df$time[row] <- survival_df$LastSeen[row] - survival_df$Birthdate[row]
+      survival_df$event[row] <- 0
+    }else{
+      survival_df$time[row] <- survival_df$Disappeared[row] - survival_df$Birthdate[row]
+      survival_df$event[row] <- 1
+    }
+  }
+}
+
+surv.fit <- coxph(Surv(time = survival_df$time, 
+                       event = survival_df$event) ~
+                    survival_df$RankChange)
+
+summary(surv.fit)
+
+ggsurvplot(survfit(Surv(time, event) ~ RankChange, data = survival_df), conf.int = T, pval = T, data = survival_df, risk.table = F,
+           palette = c('dodgerblue4', 'dodgerblue', 'darkorange'), size = 2)
+
+
+
+####LRS for animals who have died##### - Summary: no difference between upmovers and downmovers
+
+full_life <- filter(tblHyenas, !is.na(Birthdate) & !is.na(Disappeared), 
+                    ID %in% ranks$ID)
+
+full_life$rank.change <- NA
+full_life$cubs.produced <- NA
+for(row in 1:nrow(full_life)){
+  full_life$cubs.produced[row] <- nrow(filter(tblHyenas, Mom == full_life$ID[row]))
+  net.rank.change <- sum(filter(ranks, ID == full_life$ID[row])$RankDiffAbs)
+  full_life$rank.change[row] <- ifelse(net.rank.change > 0, 'Up', ifelse(net.rank.change < 0, 'Down', 'None'))
+}
+
+plot(full_life$cubs.produced ~ as.factor(full_life$rank.change))
+
+
+
+#######Look at fitness change within individuals####
+tblHyenas$BirthYear <- as.numeric(format(tblHyenas$Birthdate, '%Y'))
+tblHyenas$Survive2 <- ifelse(is.na(tblHyenas$Disappeared) | 
+                               tblHyenas$Disappeared - tblHyenas$Birthdate > (365*2),
+                             TRUE,
+                             FALSE)
+
+left_join(ranks, tblHyenas, by = c('ID' = 'Mom', 'Year' = 'BirthYear')) %>%
+  group_by(ID, Year) %>% summarize(ARS = sum(!is.na(Name)), 
+                                   Surv2 = sum(as.numeric(Survive2))) %>%
+  left_join(ranks, ., by = c('ID', 'Year')) -> ranks
+
+ranks[is.na(ranks$Surv2),]$Surv2 <- 0
+
+
+changers.list <- list()
+counter <- 1
+for(id in unique(filter(ranks, RankChange != 'None')$ID)){
+  change_year <- filter(ranks, ID == id, RankChange != 'None')$Year %>% max()
+  if((change_year - 2) %in% filter(ranks, ID == id)$Year & 
+     (change_year + 2) %in% filter(ranks, ID == id)$Year){
+    changers.list[[counter]] <- data.frame(id,
+                                    change.year = change_year,
+                                    pre.ars = mean(filter(ranks, ID == id,
+                                                   Year < change_year)$ARS),
+                                    post.ars = mean(filter(ranks, ID == id,
+                                                           Year > change_year)$ARS),
+                                    net.change = sum(filter(ranks, ID == id)$RankDiff),
+                                    net.direction = ifelse(sum(filter(ranks, ID == id)$RankDiff) < 0,
+                                                           'Down',
+                                                           'Up'),
+                                    rank.group = ifelse(filter(ranks, ID == id,
+                                                               Year == change_year)$stan.rank >= 0,
+                                                        'High',
+                                                        'Low'),
+                                    pre.surv2 = mean(filter(ranks, ID == id,
+                                                           Year > change_year)$Surv2),
+                                    post.surv2 = mean(filter(ranks, ID == id,
+                                                           Year < change_year)$Surv2))
+    counter <- counter+1
+  }
+}
+changers <- do.call(rbind, changers.list)
+changers$ars.diff <- changers$post.ars - changers$pre.ars
+#changers$rank.group <- as.factor(changers$rank.group)
+
+ggplot(data = changers,
+       aes( y = ars.diff, x= net.direction)) +
+  geom_label(aes(label = id), position = position_jitter(width = 0.3))+
+  geom_violin(alpha = 0.2)+
+  facet_wrap( ~ rank.group)+
+  theme_classic()+
+  xlab('Direction of rank change') + 
+  ylab('Consequence of change in yearly offpsring produced')
+
+ggplot(data = changers,
+       aes( y = post.surv2 - pre.surv2, x= net.direction)) +
+  geom_label(aes(label = id), position = position_jitter(width = 0.3))+
+  geom_violin(alpha = 0.2)+
+  facet_grid(. ~ rank.group)+
+  theme_classic()+
+  xlab('Direction of rank change') + 
+  ylab('Consequence of change in yearly offpsring that survive to 2yo')
+
+
+
+
+ranks %>% group_by(ID) %>% summarize(mean.rank = mean(stan.rank), 
+                                     total.cubs = sum(Surv2),
+                                     mean.cubs = mean(Surv2),
+                                     mean.ars = mean(ARS)) -> lrs
+
+lrs <- filter(lrs, ID %in% filter(tblHyenas, !is.na(Disappeared))$ID)
+
+survive_to_4 <- filter(tblHyenas, !is.na(Disappeared), Disappeared - Birthdate >= 4*365)
+
+ggplot(filter(lrs, ID %in% survive_to_4$ID), aes(x = mean.rank, y = total.cubs, label = ID))+
+  geom_label() +
+  geom_smooth(method = 'lm')+
+  theme_classic()
+
+
+pois.quad.lrs <- glm(data = filter(lrs, ID %in% survive_to_4$ID), formula = total.cubs ~ poly(mean.rank, 2), family = 'poisson')
+summary(pois.quad.lrs)
+
+pois.lrs <- glm(data = filter(lrs, ID %in% survive_to_4$ID), formula = total.cubs ~ mean.rank, family = 'poisson')
+summary(pois.lrs)
+AIC(pois.quad.lrs, pois.lrs)
+
+
+quad.ars <- lm(data = filter(lrs, ID %in% survive_to_4$ID), formula = mean.cubs ~ poly(mean.rank, 2) )
+summary(quad.ars)
+
+ars <- lm(data = filter(lrs, ID %in% survive_to_4$ID), formula = mean.cubs ~ mean.rank)
+summary(ars)
+
+AIC(quad.ars, ars)
+
+
+ggplot(filter(lrs, ID %in% survive_to_4$ID), aes(x = mean.rank, y = mean.cubs, label = ID))+
+  geom_label() +
+  geom_smooth(method = 'loess')+
+  theme_classic()
+
+
+
+##Feeding##
+scans <- read_csv('~/Documents/Fisibase/tblScans.csv', col_types = 'ccccccc')
+scans$Session <- as.character(scans$Session)
+scans$Date <- left_join(scans, tblSessions, by = c('Session' = 'session'))$date
+format(scans$Date, '%Y') %>% as.numeric() %>% hist()
+
+changers$pre.fd <- NA
+changers$post.fd <- NA
+changers$pre.fd.obs <- NA
+changers$post.fd.obs <- NA
+for(row in 1:nrow(changers)){
+  change_year <- changers[row,]$change.year
+  pre.id.scans <- filter(scans, format(Date, '%Y') < change_year, Hyena == changers[row,]$id)
+  post.id.scans <- filter(scans, format(Date, '%Y') > change_year, Hyena == changers[row,]$id)
+  changers$pre.fd.obs[row] <- nrow(pre.id.scans)
+  changers$post.fd.obs[row] <- nrow(post.id.scans)
+  changers$pre.fd[row] <- nrow(filter(pre.id.scans, BehaviorCode %in% c('fd', 'fd?'))) / 
+    nrow(pre.id.scans)
+  changers$post.fd[row] <- nrow(filter(post.id.scans, BehaviorCode %in% c('fd', 'fd?'))) / 
+    nrow(post.id.scans)
+}
+
+changers$fd.dif <- changers$post.fd - changers$pre.fd
+
+ggplot(data = filter(changers, pre.fd.obs >= 10, post.fd.obs >= 10),
+       aes( y = fd.dif, x= net.direction)) +
+  geom_label(aes(label = id), position = position_jitter(width = 0.3))+
+  geom_violin(alpha = 0.2)+
+  theme_classic()+
+  xlab('Direction of rank change') + 
+  ylab('Difference in feeding before vs after rank change')
+
+
+
+####Amplifications of small rank differences###
+matriarchs <- c('kb', 'dj', '03', 'coch', '40',
+                'rbc', 'wafl', 'digs', 'shrm',
+                'clov', 'java', 'coel', 'pike')
+ranks$matriline <- NA
+for(matriarch in matriarchs){
+  assign(paste0('matriarch_', matriarch), matriarch)
+  for(i in 1:20){
+    assign(paste0('matriarch_', matriarch), 
+           unique(c(get(paste0('matriarch_', matriarch)),
+                    filter(tblHyenas, Mom %in% get(paste0('matriarch_', matriarch)))$ID)))
+  }
+  ranks[ranks$ID %in% get(paste0('matriarch_', matriarch)),]$matriline <- matriarch
+}
+ranks[is.na(ranks$matriline),]$matriline <- 'other'
+ranks[ranks$matriline == 'coch',]$matriline <- '03'
+
+first_year <- filter(ranks, Clan == 'talek') %>% 
+  group_by(ID) %>% summarize(first_year = min(Year), 
+                             first_rank = Rank[which.min(Year)],
+                             matriline = matriline[1]) 
+ribbon <- filter(ranks, Clan == 'talek') %>%
+  group_by(matriline, Year) %>%
+  summarize(ymin = min(Rank), ymax = max(Rank), max.stan = max(stan.rank),
+            mean.stan = mean(stan.rank))
+
+ribbon[ribbon$matriline == '40' & ribbon$Year > 2007,c('ymin', 'ymax')] <- NA
+
+# matriline_labels <- ribbon %>% group_by(matriline) %>% 
+#   summarize (x.start = 1997,
+#              y.start = mean(c(ymin[which(Year == 1997)], ymax[which(Year == 1997)])))
+
+matriline_labels <- data.frame(x.start = rep(1987), 
+                               matriline = c('kb', 'dj', 'coch', '03', '40', 'other'),
+                               y.start = c(1.5, 3, 5, 6.5, 8, 15))
+matriline_labels <- arrange(matriline_labels, matriline)
+
+matriline_labels <- data.frame(x.start = rep(1987), 
+                               matriline = c('kb', 'dj', '03', '40', 'other'),
+                               y.start = c(0.7, 3.3, 5.5, 8, 15))
+matriline_labels <- arrange(matriline_labels, matriline)
+
+
+desat <- function(cols, sat=0.5) {
+  X <- diag(c(1, sat, 1)) %*% rgb2hsv(col2rgb(cols))
+  hsv(X[1,], X[2,], X[3,])
+}
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+cols <- gg_color_hue(5)
+cols[2] <- 'darkgoldenrod1'
+
+matriline.colors <- ggplot(filter(ranks, Clan == 'talek'), 
+       aes(x = Year, y = Rank, group = ID, col = matriline)) +
+  geom_ribbon(data = ribbon, aes(x = Year, ymin = ymin - 0.5, ymax = ymax +0.5,
+                                 group = matriline, fill = matriline),
+              inherit.aes = FALSE)+
+  geom_ribbon(data = filter(ranks, Clan == 'talek'), aes(x = Year, ymin = Rank - 0.5, ymax = Rank+0.5,
+                                 group = ID,  fill = matriline),
+              inherit.aes = FALSE) +
+  geom_line(size = 0.5) +
+  theme_classic() +
+  ylim(55, 0) + 
+  theme(legend.position = 'none') +
+  geom_label(data = matriline_labels,
+             aes(x = x.start, y = y.start, label = matriline, group = matriline, fill = matriline),
+             label.size = NA,
+             label.padding = unit(0.2, 'lines'),
+             color = 'gray25')+
+  scale_color_manual(values = cols) + 
+  scale_fill_manual(values = desat(cols, sat= 0.5))+
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+
+
+
+stan.rank.labels <- data.frame(matriline = sort(unique(filter(ranks, Clan == 'talek')$matriline)),
+                               start = rep(1988),
+                               start.stan = filter(ribbon, Year == 1988)$max.stan,
+                               mean.start.stan = filter(ribbon, Year == 1988)$mean.stan)
+
+#mean standardized rank
+mean.matriline.rank <- ggplot(ribbon, aes(x = Year, y= mean.stan, group = matriline))+
+  geom_line(data = ribbon, aes(col = matriline), size = 2)+
+  theme_classic()+
+  geom_label(data = stan.rank.labels,
+             aes(x = start, y = mean.start.stan, label = matriline, group = matriline, fill = matriline),
+             label.size = NA,
+             label.padding = unit(0.2, 'lines'),
+             color = 'gray25')+
+  scale_color_manual(values = cols)  + 
+  scale_fill_manual(values = desat(cols, sat= 0.5))+
+  theme(legend.position = 'none')+
+  ylab('Mean standardized rank')
+
+grid.newpage()
+grid.draw(rbind(ggplotGrob(matriline.colors), 
+                ggplotGrob(mean.matriline.rank),
+          size = 'last'))
+gridExtra::grid.arrange(matriline.colors, mean.matriline.rank, nrow = 2, heights = c(2,1))

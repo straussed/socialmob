@@ -27,7 +27,7 @@ for(clan in unique(ranks$Clan)){
       ai.net <- ai.count.net
       for(a in rownames(ai.count.net)){
         for(b in rownames(ai.count.net)){
-          ai.net[a,b] <- ai.count.net[a,b]/(ai.count.net[a,a] + ai.count.net[b,b] - ai.count.net[a,b])
+          ai.net[a,b] <- ai.count.net[a,b]/(.5*(ai.count.net[a,a] + ai.count.net[b,b]) - ai.count.net[a,b])
         }
       }
       diag(ai.net) <- 0
@@ -69,9 +69,9 @@ for(row in 1:tibdim(clan_years$Clan)){
 ranks_mod <- anti_join(ranks, clan_years, by = c('Clan', 'Year' = 'First')) %>%
   anti_join(clan_years, by = c('Clan', 'Year' = 'Last'))
 
-iterations <- 10000
-ai_mod <- ranks_mod %>% lm(formula = RankDiff ~ ai_deg)
-ai_top3_mod <- ranks_mod %>% lm(formula = RankDiff ~ ai_top3_deg)
+iterations <- 1000
+ai_mod <- ranks_mod %>% lm(formula = RankDiffAbs ~ ai_deg)
+ai_top3_mod <- ranks_mod %>% lm(formula = RankDiffAbs ~ ai_top3_deg)
 
 obs_coef <- as_tibble(cbind(ai_deg = ai_mod %>% coef() %>% .[2],
                    ai_top3_deg = ai_top3_mod %>% coef() %>% .[2]))
@@ -87,15 +87,15 @@ for(i in 1:iterations){
     group_by(PermCategory) %>% 
     sample_frac(replace = F) %>% 
     ungroup() %>% 
-    select(RankDiff) %>% .[[1]] ->
-    ranks.perm$RankDiff
+    dplyr::select(RankDiffAbs) %>% .[[1]] ->
+    ranks.perm$RankDiffAbs
 
   ranks.perm %>%
-    lm(formula = RankDiff ~ ai_deg) %>%
+    lm(formula = RankDiffAbs ~ ai_deg) %>%
     coef() %>% .[2] -> perm_coef[i,1]
   
   ranks.perm %>%
-    lm(formula = RankDiff ~ ai_top3_deg) %>%
+    lm(formula = RankDiffAbs ~ ai_top3_deg) %>%
     coef() %>% .[2] -> perm_coef[i,2]
 }
 
@@ -104,13 +104,13 @@ ai_plot <- hist(perm_coef$ai_deg, breaks = 50, col = 'black',
                 main = 'Effects from model with all allies',
                 xlab = 'Effect of AI with all allies')
 segments(x1 = obs_coef$ai_deg, x0 = obs_coef$ai_deg, y0 = 0, y1 = max(ai_plot$counts), col = 'red', lty=2, lwd=2)
-text(x = -.018, y = 500, paste0('p = ', tibdim(which(perm_coef$ai_deg >= obs_coef$ai_deg))/10000))
+text(x = -.018, y = 500, paste0('p = ', 2*tibdim(which(perm_coef$ai_deg >= obs_coef$ai_deg))/1000))
 
 ai_top3_plot <- hist(perm_coef$ai_top3_deg, breaks = 50, col = 'black',
                      main = 'Effects from model with all allies',
                      xlab = 'Effect of AI with top allies')
 segments(x1 = obs_coef$ai_top3_deg, x0 = obs_coef$ai_top3_deg, y0 = 0, y1 = max(ai_top3_plot$counts), col = 'red', lty=2, lwd=2)
-text(x = -.042, y = 300, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/10000))
+text(x = -.042, y = 300, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/1000))
 
 ###############################################
 
@@ -128,15 +128,15 @@ ranks_mod <- anti_join(ranks, clan_years, by = c('Clan', 'Year' = 'First')) %>%
                                                #            ai_top3_deg = (ai_top3_deg-mean(ai_top3_deg))/sd(ai_top3_deg))
 
                     
-iterations <- 10000
+iterations <- 100
 ranks_mod <- filter(ranks_mod, RankCategory == 'High')
 mod_length <- tibdim(ranks_mod)
 ###matrix store permuted values
 rank_diff_perm <- matrix(NA, nrow=mod_length, ncol=iterations)
 ranks_mod$RankDev <- abs(ranks_mod$RankDiffAbs)
 
-ai_mod <-  ranks_mod %>% lm(formula = RankDiff ~ ai_deg)
-ai_top3_mod <- ranks_mod %>% lm(formula = RankDiff ~ ai_top3_deg)
+ai_mod <-  ranks_mod %>% lm(formula = RankDiffAbs ~ ai_deg)
+ai_top3_mod <- ranks_mod %>% lm(formula = RankDiffAbs ~ ai_top3_deg)
 
 obs_coef <- as_tibble(cbind(ai_deg = ai_mod %>% coef() %>% .[2],
                             ai_top3_deg = ai_top3_mod %>% coef() %>% .[2]))
@@ -151,7 +151,7 @@ for(i in 1:iterations){
     group_by(PermCategory) %>% 
     sample_frac(replace = F) %>% 
     ungroup() %>% 
-    select(RankDiffAbs) %>% .[[1]] ->
+    dplyr::select(RankDiffAbs) %>% .[[1]] ->
     ranks.perm$RankDiffAbs
   
   ranks.perm %>%
@@ -178,7 +178,7 @@ for(i in 1:iterations){
 # segments(x1 = obs_coef$ai_top3_deg, x0 = obs_coef$ai_top3_deg, y0 = 0, y1 = max(ai_top3_plot$counts), col = 'red',lty=2,lwd=2)
 # text(x = .5, y = 500, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations))
 
-range <- c(min(perm_coef$ai_top3_deg)-.005, max(perm_coef$ai_top3_deg, obs_coef$ai_top3_deg) + .005)
+range <- c(min(perm_coef$ai_top3_deg)-.2, max(perm_coef$ai_top3_deg, obs_coef$ai_top3_deg) + .2)
 mar.default <- c(5,4,4,2) + 0.1
 par(mfrow = c(1,1), family = 'Trebuchet MS', mar = mar.default + c(0, 1, 0, 0))
 d <- density(perm_coef$ai_top3_deg)
@@ -202,7 +202,7 @@ ai_perm_stacked <- tibble(ai_all_deg = rep(ranks_mod$ai_deg, iterations),
 ai_perm_stacked <- bind_rows(ai_perm_stacked,
                              tibble(ai_all_deg = ranks_mod$ai_deg,
                              ai_top_deg = ranks_mod$ai_top3_deg,
-                             rank_diff = ranks_mod$RankDiff,
+                             rank_diff = ranks_mod$RankDiffAbs,
                              rank_change = ifelse(rank_diff == 0, 'None',
                                                   ifelse(rank_diff < 0, 'Down',
                                                          'Up')),
@@ -226,9 +226,9 @@ ranks_mod <- filter(ranks_mod, RankCategory == 'Low')
 mod_length <- tibdim(ranks_mod)
 ###matrix store permuted values
 rank_diff_perm <- matrix(NA, nrow=mod_length, ncol=iterations)
-iterations <- 10000
-ai_mod <- ranks_mod %>% lm(formula = RankDiff ~ ai_deg)
-ai_top3_mod <- ranks_mod %>% lm(formula = RankDiff ~ ai_top3_deg)
+iterations <- 100
+ai_mod <- ranks_mod %>% lm(formula = RankDiffAbs ~ ai_deg)
+ai_top3_mod <- ranks_mod %>% lm(formula = RankDiffAbs ~ ai_top3_deg)
 
 obs_coef <- as_tibble(cbind(ai_deg = ai_mod %>% coef() %>% .[2],
                             ai_top3_deg = ai_top3_mod %>% coef() %>% .[2]))
@@ -243,7 +243,7 @@ for(i in 1:iterations){
     group_by(PermCategory) %>% 
     sample_frac(replace = F) %>% 
     ungroup() %>% 
-    select(RankDiffAbs) %>% .[[1]] ->
+    dplyr::select(RankDiffAbs) %>% .[[1]] ->
     ranks.perm$RankDiffAbs
   
   ranks.perm %>%
@@ -303,7 +303,7 @@ ai_perm_stacked <- bind_rows(ai_perm_stacked,
                                     network = 'Observed'))
 
 ai_perm_stacked$rank_change <- factor(ai_perm_stacked$rank_change,
-                                      levels = c('Up', 'None', 'Down'))
+                                      levels = c('Down', 'None', 'Up'))
 
 
 facet_labels = c(High = 'High ranking individuals', Low = 'Low ranking individuals')
@@ -315,14 +315,16 @@ top_plot <- ggplot(data = ai_perm_stacked, aes(x = rank_change, y = ai_top_deg, 
   theme_bw() + 
   facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
   xlab('Direction of rank change')+
-  ylab('Total degree of association with top allies')#+
-  coord_cartesian(ylim= c(0,1.5))
+  ylab('Total degree of association with top allies')
+  #coord_cartesian(ylim= c(0,1.5))
 top_plot +
   theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
         strip.text.x = element_text(face = 'bold', size = 12,family = 'Trebuchet MS'),
         axis.title = element_text(size = 14,family = 'Trebuchet MS'),
         axis.text = element_text(size = 12, family = 'Trebuchet MS'),
-        legend.text = element_text(size = 12, family = 'Trebuchet MS'))
+        legend.text = element_text(size = 12, family = 'Trebuchet MS'),
+        panel.grid.major = element_blank(),
+        panel.grid.minor= element_blank())
   
 
 
@@ -352,7 +354,7 @@ ranks_mod <- anti_join(ranks, clan_years, by = c('Clan', 'Year' = 'First')) %>%
 #            ai_top3_deg = (ai_top3_deg-mean(ai_top3_deg))/sd(ai_top3_deg))
 
 
-iterations <- 1000
+iterations <- 100
 ranks_mod <- filter(ranks_mod, RankChange != 'None', RankCategory == 'High')
 mod_length <- tibdim(ranks_mod)
 ###matrix store permuted values
@@ -375,7 +377,7 @@ for(i in 1:iterations){
     group_by(PermCategory) %>% 
     sample_frac(replace = F) %>% 
     ungroup() %>% 
-    select(RankChange) %>% .[[1]] ->
+    dplyr::select(RankChange) %>% .[[1]] ->
     ranks.perm$RankChange
   
   ranks.perm %>%
@@ -394,13 +396,13 @@ ai_plot <- hist(perm_coef$ai_deg, breaks = 50, col = 'black',
                 main = 'Effects from model with all allies\n>Low status<',
                 xlab = 'Effect of AI with all allies')
 segments(x1 = obs_coef$ai_deg, x0 = obs_coef$ai_deg, y0 = 0, y1 = max(ai_plot$counts), col = 'red', lty = 2, lwd = 2)
-text(x = -.022, y = 600, paste0('p = ', 2*tibdim(which(perm_coef$ai_deg >= obs_coef$ai_deg))/10000))
+text(x = -.022, y = 600, paste0('p = ', 2*tibdim(which(perm_coef$ai_deg >= obs_coef$ai_deg))/iterations))
 
 ai_top3_plot <- hist(perm_coef$ai_top3_deg, breaks = 50, col = 'black',
                      main = 'Effects from model with top allies\n>Low status<',
                      xlab = 'Effect of AI with top allies')
 segments(x1 = obs_coef$ai_top3_deg, x0 = obs_coef$ai_top3_deg, y0 = 0, y1 = max(ai_top3_plot$counts), col = 'red', lty = 2, lwd = 2)
-text(x = -.09, y = 450, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/1000))
+text(x = -.09, y = 450, paste0('p = ', 2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations))
 
 
 

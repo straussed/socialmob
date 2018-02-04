@@ -34,8 +34,8 @@ for(id in unique(ranks[ranks$Clan == 'talek',]$ID)){
   # }else{with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))}
   with(filter(ranks, ID == id), lines(Rank ~ Year, lwd = 1.5, col = clr))
   if(ranks[which(ranks$ID == id)[1],]$RankChange != 'None'){
-    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = '!', cex = 1, font = 2, adj = 1)
-    text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = 'O', cex = 1.5, font = 1, adj = .62)
+    #text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = '!', cex = 1, font = 2, adj = 1)
+    #text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = 'O', cex = 1.5, font = 1, adj = .62)
   }#else{text(x = ranks[which(ranks$ID == id)[1],]$Year, y = ranks[which(ranks$ID == id)[1],]$Rank, labels = "•, cex = .8)}
 }
 
@@ -236,4 +236,33 @@ ggplot(data = filter(ranks, RankCategory == 'High'), aes(y=abs(RankDiffAbs),x=ai
 tibble(ID = c('koi', 'bsh', 'mrph', 'rbc'),
         ChangeAfterDeath = c('yes', 'yes', 'yes', 'yes'))
 
+
+
+####Visualize network
+net <- graph_from_adjacency_matrix(ai_net_2012_talek, weighted = T)
+l <- layout_in_circle(net)
+V(net)$size <- -(filter(ranks, Clan == 'talek', Year == 2012)$Rank-(length(V(net))+1))/4
+V(net)$frame.color <- "black"
+V(net)$color <- "black"
+V(net)$label <- "" 
+V(net)$arrow.mode <- 0
+E(net)$arrow.mode <- 0
+E(net)$color = 'black'
+
+E(net)$width <- round(E(net)$weight, digits = 1)*10
+
+plot(net, layout = l)
+
+E(net)$width <- round(E(net)$weight, digits = 2)*10
+plot(net, layout = l)
+
+setwd(dir = '~/Documents/Webpage/straussed/static/img/logo images/')
+thresh <- c(1, 10, 12, 15, 17, 20)
+for(t in thresh){
+  w <- 10*t
+  E(net)$width <- round(E(net)$weight/t, digits = 2)*w
+  png(filename = paste0("ai_plot_", t,".png"))
+  plot(net, layout = l)
+  dev.off()
+}
 

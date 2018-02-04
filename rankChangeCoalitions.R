@@ -143,19 +143,22 @@ for(category in list('High', 'Low')){
                                         coal_top_deg = ranks_mod$coal_top3_deg,
                                         rank_change = ranks_mod$RankDiffAbs,
                                         rank_category = category,
+                                        ai_top_deg = ranks_mod$ai_top3_deg,
                                         network = 'Observed'))
   
-  iterations <- 100
+  iterations <- 1000
   
   rank_perm_change <- matrix(NA, nrow=tibdim(ranks_mod), ncol=iterations)
 
   coal_mod <- ranks_mod %>% lme4::lmer(formula = RankDiffAbs ~ coal_deg + (1|ID))
-  coal_top3_mod <- ranks_mod %>% lme4::lmer(formula = RankDiffAbs ~ coal_top3_deg + (1|ID))
+  coal_top3_mod <- ranks_mod %>% lme4::lmer(formula = RankDiffAbs ~ coal_top3_deg + ai_top3_deg + (1|ID))
   
   obs_coef <- as_tibble(cbind(coal_deg = coal_mod %>% .@beta %>% .[2],
-                              coal_top3_deg = coal_top3_mod %>% .@beta %>% .[2]))
+                              coal_top3_deg = coal_top3_mod %>% .@beta %>% .[2],
+                              ai_top3_deg = coal_top3_mod %>% .@beta %>% .[3]))
   perm_coef <- tibble(coal_deg = rep(NA, iterations), 
-                      coal_top3_deg = rep(NA, iterations))
+                      coal_top3_deg = rep(NA, iterations),
+                      ai_top3_deg = NA)
   
   ranks.perm <- ranks_mod
   ###Select variables to permute within##
@@ -174,8 +177,12 @@ for(category in list('High', 'Low')){
       .@beta %>% .[2] -> perm_coef[i,1]
     
     ranks.perm %>%
-      lme4::lmer(formula = RankDiffAbs ~ coal_top3_deg + + (1|ID)) %>%
+      lme4::lmer(formula = RankDiffAbs ~ coal_top3_deg + ai_top3_deg + (1|ID)) %>%
       .@beta %>% .[2] -> perm_coef[i,2]
+    
+    ranks.perm %>%
+      lme4::lmer(formula = RankDiffAbs ~ coal_top3_deg + ai_top3_deg + (1|ID)) %>%
+      .@beta %>% .[3] -> perm_coef[i,3]
     
     rank_perm_change[,i] <- as.character(ranks.perm$RankDiffAbs)
   }
@@ -185,6 +192,7 @@ for(category in list('High', 'Low')){
                                       coal_top_deg = rep(ranks_mod$coal_top3_deg, iterations),
                                       rank_change = as.numeric(as.vector(rank_perm_change)),
                                       rank_category = category,
+                                      ai_top_deg = rep(ranks_mod$ai_top3_deg, iterations),
                                       network = 'Permuted'))
   
   # coal_plot <- hist(perm_coef$coal_deg, breaks = 50, col = 'black',
@@ -210,6 +218,19 @@ for(category in list('High', 'Low')){
                          xlim = range)
   polygon(d, col = 'grey87', border = 'grey87')
   abline(v = obs_coef$coal_top3_deg, col = 'dodgerblue1', lty=2, lwd=6)
+  
+  p_coal <- ifelse(tibdim(which(perm_coef$coal_top3_deg >= obs_coef$coal_top3_deg))/iterations < 1,
+              2*tibdim(which(perm_coef$coal_top3_deg >= obs_coef$coal_top3_deg))/iterations,
+              2*tibdim(which(perm_coef$coal_top3_deg >= obs_coef$coal_top3_deg))/iterations)
+  assign(paste0('p_coal_', category), p_coal)
+  assign(paste0('beta_coal_', category), obs_coef$coal_top3_deg)
+  
+  p_ai <- ifelse(tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations > 0.5,
+                   2*tibdim(which(perm_coef$ai_top3_deg <= obs_coef$ai_top3_deg))/iterations,
+                   2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations)
+  
+  assign(paste0('p_ai_', category), p_ai)
+  assign(paste0('beta_ai_', category), obs_coef$ai_top3_deg)
 }
 
 
@@ -221,35 +242,59 @@ coal_perm_stacked$rank_change_category <- ifelse(coal_perm_stacked$rank_change =
 coal_perm_stacked$rank_change_category %<>% factor(., levels = c('Down', 'None', 'Up'))
 
 top_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change_category, y = coal_top_deg, fill = network)) + 
-  geom_boxplot(alpha = .7, outlier.shape = NA)+
+  geom_boxplot(alpha = 0.7, outlier.shape = NA)+
   scale_fill_manual(values = colors, name = '') +
   theme_bw() + 
   facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
   xlab('Direction of rank change')+
   ylab('Total degree of coalitions with top allies')+
-  coord_cartesian(ylim= c(0,35))
+  coord_cartesian(ylim= c(0,35))+
+  coord_flip()
 
+pdf(file = '~/Documents/Presentations/BEACON Talk 2017/coal_by_rank_category.pdf', width = 10)
 top_plot +
   theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
-        strip.text.x = element_text(face = 'bold', size = 12,family = 'Trebuchet MS'),
-        axis.title = element_text(size = 14,family = 'Trebuchet MS'),
-        axis.text = element_text(size = 12, family = 'Trebuchet MS'),
-        legend.text = element_text(size = 12, family = 'Trebuchet MS'),
+        strip.text.x = element_text(face = 'bold', size = 12,family = ''),
+        axis.title = element_text(size = 14,family = ''),
+        axis.text = element_text(size = 12, family = ''),
+        legend.text = element_text(size = 12, family = ''),
         panel.grid.major = element_blank(),
         panel.grid.minor= element_blank())
 
+dev.off()
 
-
-all_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change, y = coal_all_deg, fill = network)) + 
+pdf(file = '~/Documents/Presentations/BEACON Talk 2017/ai_by_rank_category.pdf', width = 10)
+ai_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change_category, y = ai_top_deg, fill = network)) + 
   geom_boxplot(alpha = .7, outlier.shape = NA)+
   scale_fill_manual(values = colors, name = '') +
   theme_bw() + 
   facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
   xlab('Direction of rank change')+
-  ylab('Total degree of coalitions with all allies')
-all_plot +
+  ylab('Sum of association indices with top allies')+
+  coord_flip()
+
+ai_plot +
   theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
-        strip.text.x = element_text(face = 'bold'))
+        strip.text.x = element_text(face = 'bold', size = 12,family = ''),
+        axis.title = element_text(size = 14,family = ''),
+        axis.text = element_text(size = 12, family = ''),
+        legend.text = element_text(size = 12, family = ''),
+        panel.grid.major = element_blank(),
+        panel.grid.minor= element_blank())
+
+dev.off()
+2*tibdim(which(perm_coef$ai_top3_deg >= obs_coef$ai_top3_deg))/iterations
+
+# all_plot <- ggplot(data = coal_perm_stacked, aes(x = rank_change, y = coal_all_deg, fill = network)) + 
+#   geom_boxplot(alpha = .7, outlier.shape = NA)+
+#   scale_fill_manual(values = colors, name = '') +
+#   theme_bw() + 
+#   facet_grid(. ~ rank_category, labeller = labeller(rank_category = facet_labels))+
+#   xlab('Direction of rank change')+
+#   ylab('Total degree of coalitions with all allies')
+# all_plot +
+#   theme(strip.background = element_rect(fill = alpha(colors[1], .7)),
+#         strip.text.x = element_text(face = 'bold'))
 
 
 
