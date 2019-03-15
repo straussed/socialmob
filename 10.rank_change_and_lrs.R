@@ -151,7 +151,7 @@ exp.change.lrs <- ggplot(filter(ranks, lrs.ratio != 1), aes(x = Stan.Rank, y = R
   geom_jitter(shape = 21, col = 'grey80')+
   theme_classic()+
   geom_hline(yintercept = 0, lty = 2)+
-  xlab('Standardize rank after change')+
+  xlab('Standardized rank after change')+
   ylab('Number of positions moved') +
   ylim(-11, 22)+
   scale_fill_gradientn(colors = c("firebrick", "white","dodgerblue"),

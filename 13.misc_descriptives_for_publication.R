@@ -96,7 +96,7 @@ ggplot(data = yearly.aggs, aes(x = aggs.per.id, y = prop.changes)) +
   geom_point()+
   geom_smooth(method = 'lm')+
   theme_classic()+
-  xlab('Aggressions observed per individual')+
+  xlab('Aggressive acts observed per individual')+
   ylab('Proportion of individuals experiencing rank reversal')+
   annotate('text', x = 15, y = 0.75, label = 'Pearson correlation = 0.184')
 
